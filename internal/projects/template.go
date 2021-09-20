@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	_ "github.com/goccy/go-graphviz"
 	"github.com/xanzy/go-gitlab"
@@ -71,7 +72,8 @@ func (s *Source) getIncludeChildren(i Include) ([]Include, error) {
 	var children []Include
 
 	for _, f := range i.Files {
-		file, err := s.getRawFileFromProject(i.Project, f, i.Ref)
+		trimmedFileName := strings.Trim(strings.Trim(f, "\""), "/")
+		file, err := s.getRawFileFromProject(i.Project, trimmedFileName, i.Ref)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get file %s: %w", f, err)
 		}
