@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/goccy/go-graphviz"
+	"github.com/goccy/go-graphviz/cgraph"
 	"github.com/xanzy/go-gitlab"
 )
 
@@ -27,6 +29,37 @@ func New(gitlabHost, gitlabToken string) (*Source, error) {
 		return nil, err
 	}
 	return &Source{gitlabClient: gitlabClient}, nil
+}
+
+func (s *Source) PlotDependencyTree(projectID int) error {
+
+	p, _, err := s.gitlabClient.Projects.GetProject(projectID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get project: %w", err)
+	}
+
+	includes, err := s.TraverseCIFileFromProject(p)
+	if err != nil {
+		return fmt.Errorf("failed to traverse CI file from project: %w", err)
+	}
+
+	g := graphviz.New()
+	graph, err := g.Graph()
+	if err != nil {
+		return fmt.Errorf("failed to create graph: %w", err)
+	}
+
+	//rootNode, err := graph.CreateNode(p.Name)
+	//if err != nil {
+	//	return fmt.Errorf("failed to create root node: %w", err)
+	//}
+
+	populateGraph(graph, nil, includes)
+
+	if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
+		return fmt.Errorf("failed to create graph: %w", err)
+	}
+	return nil
 }
 
 func (s *Source) GatherProjectData(input GatherProjectDataInput) error {
@@ -57,35 +90,77 @@ func (s *Source) GatherProjectData(input GatherProjectDataInput) error {
 					continue
 				}
 
-				//ciFile, err := s.getCIFile(*p)
-				//if err != nil {
-				//	//log.Printf("failed to get CI file from %d: %s", p.ID, err)
-				//	continue
-				//}
-				//
-				//includes, err := s.parseIncludes(ciFile)
-				//if err != nil {
-				//	log.Printf("failed to parse CI file of %d: %s", p.ID, err)
-				//	continue
-				//}
-				//
-				for _, include := range includes {
-					for _, f := range include.Files {
-						fmt.Printf("project %d has direct include %s/%s on ref %s\n", p.ID, include.Project, f, include.Ref)
-					}
-					for _, cInclude := range include.Children {
-						for _, f := range cInclude.Files {
-							fmt.Printf("project %d has indirect include %s/%s on ref %s\n", p.ID, cInclude.Project, f, cInclude.Ref)
-						}
-					}
+				g := graphviz.New()
+				graph, err := g.Graph()
+				if err != nil {
+					fmt.Printf("failed to create graph: %s", err)
 				}
 
+				populateGraph(graph, nil, includes)
+
+				if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
+					log.Printf("failed to create graph: %s", err)
+				}
 			}
 		}()
 	}
 
 	workWG.Wait()
 	return nil
+}
+
+func populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, includes []Include) {
+	for _, i := range includes {
+		if i.Project == "" {
+			continue
+		}
+
+		var err error
+		if parentNode == nil {
+			parentNodeName := fmt.Sprintf("%s:%s", i.Project, i.Ref)
+			parentNode, err = graph.CreateNode(parentNodeName)
+			if err != nil {
+				log.Printf("failed to create node %s", err)
+			}
+		}
+
+		for _, f := range i.Files {
+			fNode, err := graph.CreateNode(f)
+			if err != nil {
+				log.Printf("failed to create file node: %s", err)
+			}
+
+			fNode.SetFillColor("lightgreen")
+			fNode.SetStyle("dotted")
+
+			fEdge, err := graph.CreateEdge("file", parentNode, fNode)
+			if err != nil {
+				log.Printf("failed to create file edge: %s", err)
+			}
+			fEdge.SetLabel("uses")
+		}
+
+		for _, cI := range i.Children {
+			if cI.Project == "" {
+				continue
+			}
+
+			childIncludeNode, err := graph.CreateNode(fmt.Sprintf("%s:%s", cI.Project, cI.Ref))
+			if err != nil {
+				log.Printf("failed to create child include node: %s", err)
+			}
+
+			childIncludeNode.SetFillColor("lightred")
+
+			cEdge, err := graph.CreateEdge("include", parentNode, childIncludeNode)
+			if err != nil {
+				log.Printf("failed to create child include edge: %s", err)
+			}
+			cEdge.SetLabel("includes")
+		}
+
+		populateGraph(graph, parentNode, i.Children)
+	}
 }
 
 func (s *Source) getCIFile(project gitlab.Project) ([]byte, error) {
@@ -102,10 +177,6 @@ func (s *Source) getCIFile(project gitlab.Project) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("got non 2xx response from GitLab: %d: %s", resp.StatusCode, string(bodyBytes))
 	}
-
-	//if err := ioutil.WriteFile(filePath, file, 0644); err != nil {
-	//	return fmt.Errorf("failed to dump project to disk: %w", err)
-	//}
 
 	return file, nil
 }

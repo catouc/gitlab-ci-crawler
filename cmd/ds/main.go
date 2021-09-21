@@ -13,10 +13,7 @@ func main() {
 		log.Fatalf("failed to setup source: %s\n", err)
 	}
 
-	err = s.GatherProjectData(projects.GatherProjectDataInput{
-		OutPath: "out",
-		GroupID: 3788,
-	})
+	err = s.PlotDependencyTree(5780)
 	if err != nil {
 		log.Fatalf("failed to gather project data: %s", err)
 	}
