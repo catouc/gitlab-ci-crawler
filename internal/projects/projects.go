@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
+	_ "os"
 	"sync"
 
 	"github.com/goccy/go-graphviz"
@@ -49,12 +49,19 @@ func (s *Source) PlotDependencyTree(projectID int) error {
 		return fmt.Errorf("failed to create graph: %w", err)
 	}
 
-	//rootNode, err := graph.CreateNode(p.Name)
-	//if err != nil {
-	//	return fmt.Errorf("failed to create root node: %w", err)
-	//}
+	rootInclude := Include{
+		Project:  p.Name,
+		Ref:      p.DefaultBranch,
+		Files:    nil,
+		Children: includes,
+	}
 
-	populateGraph(graph, nil, includes)
+	rootNode, err := graph.CreateNode(p.Name)
+	if err != nil {
+		return fmt.Errorf("failed to create rootNode: %s", err)
+	}
+
+	populateGraph(graph, rootInclude, rootNode)
 
 	if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
 		return fmt.Errorf("failed to create graph: %w", err)
@@ -62,104 +69,89 @@ func (s *Source) PlotDependencyTree(projectID int) error {
 	return nil
 }
 
-func (s *Source) GatherProjectData(input GatherProjectDataInput) error {
+//func (s *Source) GatherProjectData(input GatherProjectDataInput) error {
+//
+//	projectsChan := make(chan *gitlab.Project, 200)
+//
+//	if err := os.MkdirAll(input.OutPath, os.ModePerm); err != nil {
+//		return fmt.Errorf("failed to create output dir %s: %w", input.OutPath, err)
+//	}
+//
+//	if input.GroupID == 0 {
+//		fmt.Println("iterating over all projects")
+//		go s.iterateAllProjects(projectsChan)
+//	} else {
+//		fmt.Println("iterating over group")
+//		go s.iterateProjectsFromGroup(projectsChan, input.GroupID)
+//	}
+//
+//	workWG := sync.WaitGroup{}
+//	for i := 0; i < 100; i++ {
+//		workWG.Add(1)
+//		go func() {
+//			defer workWG.Done()
+//			for p := range projectsChan {
+//
+//				includes, err := s.TraverseCIFileFromProject(p)
+//				if err != nil {
+//					continue
+//				}
+//
+//				g := graphviz.New()
+//				graph, err := g.Graph()
+//				if err != nil {
+//					fmt.Printf("failed to create graph: %s", err)
+//				}
+//
+//				populateGraph(graph, nil, includes)
+//
+//				if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
+//					log.Printf("failed to create graph: %s", err)
+//				}
+//			}
+//		}()
+//	}
+//
+//	workWG.Wait()
+//	return nil
+//}
 
-	projectsChan := make(chan *gitlab.Project, 200)
+func populateGraph(graph *cgraph.Graph, currentInclude Include, parentNode *cgraph.Node) {
+	//for _, f := range currentInclude.Files {
+	//	fNode, err := graph.CreateNode(f)
+	//	if err != nil {
+	//		log.Printf("failed to create file node: %s", err)
+	//	}
+	//
+	//	fNode.SetFillColor("lightgreen")
+	//	fNode.SetStyle("dotted")
+	//
+	//	fEdge, err := graph.CreateEdge("file", parentNode, fNode)
+	//	if err != nil {
+	//		log.Printf("failed to create file edge: %s", err)
+	//	}
+	//	fEdge.SetLabel("uses")
+	//}
 
-	if err := os.MkdirAll(input.OutPath, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create output dir %s: %w", input.OutPath, err)
-	}
-
-	if input.GroupID == 0 {
-		fmt.Println("iterating over all projects")
-		go s.iterateAllProjects(projectsChan)
-	} else {
-		fmt.Println("iterating over group")
-		go s.iterateProjectsFromGroup(projectsChan, input.GroupID)
-	}
-
-	workWG := sync.WaitGroup{}
-	for i := 0; i < 100; i++ {
-		workWG.Add(1)
-		go func() {
-			defer workWG.Done()
-			for p := range projectsChan {
-
-				includes, err := s.TraverseCIFileFromProject(p)
-				if err != nil {
-					continue
-				}
-
-				g := graphviz.New()
-				graph, err := g.Graph()
-				if err != nil {
-					fmt.Printf("failed to create graph: %s", err)
-				}
-
-				populateGraph(graph, nil, includes)
-
-				if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
-					log.Printf("failed to create graph: %s", err)
-				}
-			}
-		}()
-	}
-
-	workWG.Wait()
-	return nil
-}
-
-func populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, includes []Include) {
-	for _, i := range includes {
-		if i.Project == "" {
+	for _, cI := range currentInclude.Children {
+		if cI.Project == "" {
 			continue
 		}
 
-		var err error
-		if parentNode == nil {
-			parentNodeName := fmt.Sprintf("%s:%s", i.Project, i.Ref)
-			parentNode, err = graph.CreateNode(parentNodeName)
-			if err != nil {
-				log.Printf("failed to create node %s", err)
-			}
+		childIncludeNode, err := graph.CreateNode(fmt.Sprintf("%s:%s", cI.Project, cI.Ref))
+		if err != nil {
+			log.Printf("failed to create child include node: %s", err)
 		}
 
-		for _, f := range i.Files {
-			fNode, err := graph.CreateNode(f)
-			if err != nil {
-				log.Printf("failed to create file node: %s", err)
-			}
+		childIncludeNode.SetFillColor("lightred")
 
-			fNode.SetFillColor("lightgreen")
-			fNode.SetStyle("dotted")
-
-			fEdge, err := graph.CreateEdge("file", parentNode, fNode)
-			if err != nil {
-				log.Printf("failed to create file edge: %s", err)
-			}
-			fEdge.SetLabel("uses")
+		cEdge, err := graph.CreateEdge("include", parentNode, childIncludeNode)
+		if err != nil {
+			log.Printf("failed to create child include edge: %s", err)
 		}
+		cEdge.SetLabel("includes")
 
-		for _, cI := range i.Children {
-			if cI.Project == "" {
-				continue
-			}
-
-			childIncludeNode, err := graph.CreateNode(fmt.Sprintf("%s:%s", cI.Project, cI.Ref))
-			if err != nil {
-				log.Printf("failed to create child include node: %s", err)
-			}
-
-			childIncludeNode.SetFillColor("lightred")
-
-			cEdge, err := graph.CreateEdge("include", parentNode, childIncludeNode)
-			if err != nil {
-				log.Printf("failed to create child include edge: %s", err)
-			}
-			cEdge.SetLabel("includes")
-		}
-
-		populateGraph(graph, parentNode, i.Children)
+		populateGraph(graph, cI, parentNode)
 	}
 }
 

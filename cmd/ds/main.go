@@ -8,12 +8,12 @@ import (
 )
 
 func main() {
-	s, err := projects.New("https://test.source.tui", os.Getenv("GITLAB_TOKEN"))
+	s, err := projects.New("https://source.tui", os.Getenv("GITLAB_TOKEN"))
 	if err != nil {
 		log.Fatalf("failed to setup source: %s\n", err)
 	}
 
-	err = s.PlotDependencyTree(5780)
+	err = s.PlotDependencyTree(7818)
 	if err != nil {
 		log.Fatalf("failed to gather project data: %s", err)
 	}
