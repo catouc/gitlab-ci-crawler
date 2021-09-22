@@ -2,10 +2,7 @@ package projects
 
 import (
 	"fmt"
-	"io"
 	"log"
-	"os"
-	"sync"
 
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
@@ -33,215 +30,94 @@ func New(gitlabHost, gitlabToken string) (*Source, error) {
 
 func (s *Source) PlotDependencyTree(projectID int) error {
 
-	p, _, err := s.gitlabClient.Projects.GetProject(projectID, nil)
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-
-	includes, err := s.TraverseCIFileFromProject(p)
-	if err != nil {
-		return fmt.Errorf("failed to traverse CI file from project: %w", err)
-	}
-
+	// Get the project and empty graph
 	g := graphviz.New()
 	graph, err := g.Graph()
 	if err != nil {
 		return fmt.Errorf("failed to create graph: %w", err)
 	}
 
-	//rootNode, err := graph.CreateNode(p.Name)
-	//if err != nil {
-	//	return fmt.Errorf("failed to create root node: %w", err)
-	//}
+	p, _, err := s.gitlabClient.Projects.GetProject(projectID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get project: %w", err)
+	}
+	log.Printf("processing project at %s", p.WebURL)
 
-	populateGraph(graph, nil, includes)
+	rootNodeName := fmt.Sprintf("Project:%s:%s", p.Name, "*")
+	rootNode, err := graph.CreateNode(rootNodeName)
+	if err != nil {
+		log.Printf("failed to create node %s", err)
+	}
 
+	// Parse the pipeline yaml file and start the recursion on each of the sub-files
+	s.populateGraph(graph, rootNode, p.ID, gitlabCIFile)
+
+	// Render the graph
 	if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
 		return fmt.Errorf("failed to create graph: %w", err)
 	}
 	return nil
 }
 
-func (s *Source) GatherProjectData(input GatherProjectDataInput) error {
 
-	projectsChan := make(chan *gitlab.Project, 200)
+func (s *Source) populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, projectIDorURL interface{}, fileName string) error {
 
-	if err := os.MkdirAll(input.OutPath, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create output dir %s: %w", input.OutPath, err)
+	var err error
+
+	// First lets get the file we've been asked to process and get its includes
+	p, _, err := s.gitlabClient.Projects.GetProject(projectIDorURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get project: %w", err)
+	}
+	file, err := s.getRawFileFromProject(projectIDorURL, fileName, p.DefaultBranch)
+	if err != nil {
+		return fmt.Errorf("failed to get file %s: %w", gitlabCIFile, err)
 	}
 
-	if input.GroupID == 0 {
-		fmt.Println("iterating over all projects")
-		go s.iterateAllProjects(projectsChan)
-	} else {
-		fmt.Println("iterating over group")
-		go s.iterateProjectsFromGroup(projectsChan, input.GroupID)
+	includes, err := s.parseIncludes(file)
+	if err != nil {
+		return fmt.Errorf("failed to parse includes for %d: %w", projectIDorURL, err)
 	}
 
-	workWG := sync.WaitGroup{}
-	for i := 0; i < 100; i++ {
-		workWG.Add(1)
-		go func() {
-			defer workWG.Done()
-			for p := range projectsChan {
-
-				includes, err := s.TraverseCIFileFromProject(p)
-				if err != nil {
-					continue
-				}
-
-				g := graphviz.New()
-				graph, err := g.Graph()
-				if err != nil {
-					fmt.Printf("failed to create graph: %s", err)
-				}
-
-				populateGraph(graph, nil, includes)
-
-				if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
-					log.Printf("failed to create graph: %s", err)
-				}
-			}
-		}()
-	}
-
-	workWG.Wait()
-	return nil
-}
-
-func populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, includes []Include) {
-	for _, i := range includes {
-		if i.Project == "" {
-			continue
+	// Now we create the nodes for each of the included projects and included files
+	for _, includedProject := range includes {
+		log.Printf("found included project %s:%s", includedProject.Project, includedProject.Ref)	
+		
+		// Create project node
+		templateNode, err := graph.CreateNode("Template:" + includedProject.Project + ":" + includedProject.Ref)
+		if err != nil {
+			log.Printf("failed to create file node: %s", err)
 		}
+		templateNode.SetFillColor("lightblue")
 
-		var err error
-		if parentNode == nil {
-			parentNodeName := fmt.Sprintf("%s:%s", i.Project, i.Ref)
-			parentNode, err = graph.CreateNode(parentNodeName)
-			if err != nil {
-				log.Printf("failed to create node %s", err)
-			}
-		}
 
-		for _, f := range i.Files {
-			fNode, err := graph.CreateNode(f)
+		// Create file nodes
+		for _, includedFile := range includedProject.Files {
+			log.Printf("found included file %s", includedFile)	
+
+			fileNode, err := graph.CreateNode("File:" + includedFile)
 			if err != nil {
 				log.Printf("failed to create file node: %s", err)
-			}
-
-			fNode.SetFillColor("lightgreen")
-			fNode.SetStyle("dotted")
-
-			fEdge, err := graph.CreateEdge("file", parentNode, fNode)
+			}	
+			fileNode.SetFillColor("lightgreen")
+			fileNode.SetStyle("dotted")
+	
+			_, err = graph.CreateEdge("file", fileNode, templateNode)
 			if err != nil {
 				log.Printf("failed to create file edge: %s", err)
 			}
-			fEdge.SetLabel("uses")
-		}
 
-		for _, cI := range i.Children {
-			if cI.Project == "" {
-				continue
-			}
-
-			childIncludeNode, err := graph.CreateNode(fmt.Sprintf("%s:%s", cI.Project, cI.Ref))
+			_, err = graph.CreateEdge("file", parentNode, fileNode)
 			if err != nil {
-				log.Printf("failed to create child include node: %s", err)
+				log.Printf("failed to create file edge: %s", err)
 			}
 
-			childIncludeNode.SetFillColor("lightred")
+			// Now recurse downward to do the same again for this file
+			s.populateGraph(graph, fileNode, includedProject.Project, includedFile)
 
-			cEdge, err := graph.CreateEdge("include", parentNode, childIncludeNode)
-			if err != nil {
-				log.Printf("failed to create child include edge: %s", err)
-			}
-			cEdge.SetLabel("includes")
 		}
-
-		populateGraph(graph, parentNode, i.Children)
 	}
+
+	return nil
 }
 
-func (s *Source) getCIFile(project gitlab.Project) ([]byte, error) {
-	file, resp, err := s.gitlabClient.RepositoryFiles.GetRawFile(project.ID, gitlabCIFile, &gitlab.GetRawFileOptions{Ref: &project.DefaultBranch})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ci file from project %d: %w", project.ID, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("got non 2xx response from Gitlab: %d", resp.StatusCode)
-		}
-		return nil, fmt.Errorf("got non 2xx response from GitLab: %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	return file, nil
-}
-
-func (s *Source) iterateProjectsFromGroup(resultChan chan<- *gitlab.Project, groupID int) {
-	for nextPage := 1; nextPage != 0; {
-		projects, resp, err := s.gitlabClient.Groups.ListGroupProjects(groupID, &gitlab.ListGroupProjectsOptions{
-			IncludeSubgroups: gitlab.Bool(true),
-			ListOptions:      gitlab.ListOptions{Page: nextPage},
-		})
-		if err != nil {
-			log.Fatalf("failed to get projects from gitlab: %s", err)
-		}
-
-		for _, p := range projects {
-			resultChan <- p
-		}
-
-		nextPage = resp.NextPage
-	}
-
-	close(resultChan)
-}
-
-type listProjectOutput struct {
-	projects       []*gitlab.Project
-	gitlabResponse *gitlab.Response
-}
-
-func (s *Source) iterateAllProjects(resultChan chan<- *gitlab.Project) {
-	wg := sync.WaitGroup{}
-	for nextPage := 1; nextPage != 0; {
-		wg.Add(1)
-		go func(page int) {
-			pp := s.getProjectsFromPage(page)
-
-			nextPage = pp.gitlabResponse.NextPage
-
-			for _, p := range pp.projects {
-				resultChan <- p
-			}
-			wg.Done()
-		}(nextPage)
-	}
-
-	wg.Wait()
-	close(resultChan)
-}
-
-func (s *Source) getProjectsFromPage(page int) listProjectOutput {
-	projects, resp, err := s.gitlabClient.Projects.ListProjects(&gitlab.ListProjectsOptions{
-		ListOptions: gitlab.ListOptions{
-			Page:    page,
-			PerPage: 100,
-		},
-	})
-	if err != nil {
-		log.Printf("failed to get projects from page %d: %s", page, err)
-		return listProjectOutput{}
-	}
-
-	result := listProjectOutput{
-		projects:       projects,
-		gitlabResponse: resp,
-	}
-
-	return result
-}
