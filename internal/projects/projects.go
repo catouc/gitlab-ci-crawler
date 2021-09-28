@@ -10,6 +10,7 @@ import (
 )
 
 const gitlabCIFile = ".gitlab-ci.yml"
+var Debug bool
 
 type Source struct {
 	gitlabClient *gitlab.Client
@@ -30,6 +31,10 @@ func New(gitlabHost, gitlabToken string) (*Source, error) {
 
 func (s *Source) PlotDependencyTree(projectID int) error {
 
+	if Debug {
+		log.Printf("DEBUG: Plotting tree for project %d", projectID)
+	}
+
 	// Get the project and empty graph
 	g := graphviz.New()
 	graph, err := g.Graph()
@@ -43,7 +48,7 @@ func (s *Source) PlotDependencyTree(projectID int) error {
 	}
 	log.Printf("processing project at %s", p.WebURL)
 
-	rootNodeName := fmt.Sprintf("Project:%s:%s", p.Name, "*")
+	rootNodeName := fmt.Sprintf("Project:%s:%s", p.Name, gitlabCIFile)
 	rootNode, err := graph.CreateNode(rootNodeName)
 	if err != nil {
 		log.Printf("failed to create node %s", err)
@@ -60,9 +65,12 @@ func (s *Source) PlotDependencyTree(projectID int) error {
 }
 
 func (s *Source) populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, projectIDorURL interface{}, fileName string) error {
-
 	var err error
 
+	if Debug {
+		log.Printf("DEBUG: Populating graph for parent %s on project %s with file %s", parentNode.Name(), projectIDorURL, fileName)
+	}
+	
 	// First lets get the file we've been asked to process and get its includes
 	p, _, err := s.gitlabClient.Projects.GetProject(projectIDorURL, nil)
 	if err != nil {
@@ -92,25 +100,27 @@ func (s *Source) populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, pro
 
 		// Create file nodes
 		for _, includedFile := range includedProject.Files {
-			log.Printf("found included file %s", includedFile)
+			log.Printf("found included file %s", includedFile)	
 
-			fileNode, err := graph.CreateNode("File:" + includedFile)
+			fileNode, err := graph.CreateNode("File:" + includedProject.Project + ":" + includedFile)
 			if err != nil {
 				log.Printf("failed to create file node: %s", err)
-			}
+			}	
 			fileNode.SetFillColor("lightgreen")
 			fileNode.SetStyle("dotted")
-
-			_, err = graph.CreateEdge("file", fileNode, templateNode)
+	
+			templateEdge, err := graph.CreateEdge("file", fileNode, templateNode)
 			if err != nil {
 				log.Printf("failed to create file edge: %s", err)
 			}
+			templateEdge.SetLabel("owned by")
 
-			_, err = graph.CreateEdge("file", parentNode, fileNode)
+			fileEdge, err := graph.CreateEdge("file", parentNode, fileNode)
 			if err != nil {
 				log.Printf("failed to create file edge: %s", err)
 			}
-
+			fileEdge.SetLabel("includes")
+			
 			// Now recurse downward to do the same again for this file
 			s.populateGraph(graph, fileNode, includedProject.Project, includedFile)
 

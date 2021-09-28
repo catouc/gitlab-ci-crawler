@@ -22,6 +22,7 @@ type Include struct {
 
 type StringArray []string
 
+
 func (a *StringArray) UnmarshalYAML(value *yaml.Node) error {
 	var multi []string
 	err := value.Decode(&multi)
