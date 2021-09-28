@@ -23,6 +23,10 @@ func main() {
 	}
 
 	err = s.PlotDependencyTree(4186)
+	//err = s.GatherProjectData(projects.GatherProjectDataInput{
+	//	OutPath: "out",
+	//	GroupID: 129,
+	//})
 	if err != nil {
 		log.Fatalf("failed to gather project data: %s", err)
 	}

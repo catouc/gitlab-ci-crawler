@@ -64,20 +64,19 @@ func (s *Source) PlotDependencyTree(projectID int) error {
 	return nil
 }
 
-
 func (s *Source) populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, projectIDorURL interface{}, fileName string) error {
+	var err error
 
 	if Debug {
 		log.Printf("DEBUG: Populating graph for parent %s on project %s with file %s", parentNode.Name(), projectIDorURL, fileName)
 	}
-
-	var err error
-
+	
 	// First lets get the file we've been asked to process and get its includes
 	p, _, err := s.gitlabClient.Projects.GetProject(projectIDorURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
 	}
+
 	file, err := s.getRawFileFromProject(projectIDorURL, fileName, p.DefaultBranch)
 	if err != nil {
 		return fmt.Errorf("failed to get file %s: %w", gitlabCIFile, err)
@@ -90,15 +89,14 @@ func (s *Source) populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, pro
 
 	// Now we create the nodes for each of the included projects and included files
 	for _, includedProject := range includes {
-		log.Printf("found included project %s:%s", includedProject.Project, includedProject.Ref)	
-		
+		log.Printf("found included project %s:%s", includedProject.Project, includedProject.Ref)
+
 		// Create project node
 		templateNode, err := graph.CreateNode("Template:" + includedProject.Project + ":" + includedProject.Ref)
 		if err != nil {
 			log.Printf("failed to create file node: %s", err)
 		}
 		templateNode.SetFillColor("lightblue")
-
 
 		// Create file nodes
 		for _, includedFile := range includedProject.Files {
@@ -131,4 +129,3 @@ func (s *Source) populateGraph(graph *cgraph.Graph, parentNode *cgraph.Node, pro
 
 	return nil
 }
-
