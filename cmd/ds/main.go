@@ -12,10 +12,6 @@ func main() {
 		log.Fatal("missing gitlab token\n")
 	}
 
-	if os.Getenv("DEPENDENCY_LOGGING") == "DEBUG" {
-		projects.Debug = true
-	}
-
 	cfg := projects.Config{
 		GitlabHost:    "https://source.tui",
 		GitlabToken:   os.Getenv("GITLAB_TOKEN"),
@@ -29,12 +25,7 @@ func main() {
 		log.Fatalf("failed to setup source: %s\n", err)
 	}
 
-	err = s.PlotDependencyTree(5620)
-	//err = s.GatherProjectData(projects.GatherProjectDataInput{
-	//	OutPath: "out",
-	//	GroupID: 129,
-	//})
-	if err != nil {
+	if err := s.RunForestRun(); err != nil {
 		log.Fatalf("failed to gather project data: %s", err)
 	}
 }

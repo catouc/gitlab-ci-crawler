@@ -4,20 +4,20 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
-	"github.com/goccy/go-graphviz"
-	"github.com/goccy/go-graphviz/cgraph"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 	"github.com/xanzy/go-gitlab"
 )
 
-const gitlabCIFile = ".gitlab-ci.yml"
+const gitlabCIFileName = ".gitlab-ci.yml"
 
 var Debug bool
 
 type Source struct {
-	gitlabClient *gitlab.Client
-	neo4jDriver  neo4j.Driver
+	gitlabClient    *gitlab.Client
+	neo4jConnection neo4j.Driver
+	neo4jSession    neo4j.Session
 }
 
 type GatherProjectDataInput struct {
@@ -33,6 +33,11 @@ type Config struct {
 	Neo4jPassword string
 }
 
+type Project struct {
+	gitlab.Project
+	Includes []Project
+}
+
 // New creates a new project crawler thing
 // The caller is responsible for closing the neo4j driver!
 func New(cfg Config) (*Source, error) {
@@ -46,60 +51,33 @@ func New(cfg Config) (*Source, error) {
 		return nil, fmt.Errorf("failed to create neo4j driver: %w", err)
 	}
 
+	session := driver.NewSession(neo4j.SessionConfig{
+		AccessMode: neo4j.AccessModeWrite,
+	})
+
 	return &Source{
-		gitlabClient: gitlabClient,
-		neo4jDriver:  driver,
+		gitlabClient:    gitlabClient,
+		neo4jConnection: driver,
+		neo4jSession:    session,
 	}, nil
 }
 
-func (s *Source) PlotDependencyTree(projectID int) error {
+func (s *Source) RunForestRun() error {
+	resultChan := make(chan *gitlab.Project, 200)
 
-	if Debug {
-		log.Printf("DEBUG: Plotting tree for project %d", projectID)
+	go s.iterateAllProjects(resultChan)
+
+	for p := range resultChan {
+		if err := s.ParseProject(p); err != nil {
+			log.Printf("failed to parse project: %s", err)
+		}
 	}
 
-	defer s.neo4jDriver.Close()
-
-	session := s.neo4jDriver.NewSession(neo4j.SessionConfig{
-		AccessMode: neo4j.AccessModeWrite,
-	})
-	defer session.Close()
-
-	// Get the project and empty graph
-	g := graphviz.New()
-	graph, err := g.Graph()
-	if err != nil {
-		return fmt.Errorf("failed to create graph: %w", err)
-	}
-
-	p, _, err := s.gitlabClient.Projects.GetProject(projectID, nil)
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-	log.Printf("processing project at %s", p.WebURL)
-
-	rootNodeName := fmt.Sprintf("Project:%s:%s", p.Name, gitlabCIFile)
-	rootNode, err := graph.CreateNode(rootNodeName)
-	if err != nil {
-		log.Printf("failed to create node %s", err)
-	}
-
-	if err := createNode(session, "CREATE (p:Project {name: $name})", map[string]interface{}{"name": fmt.Sprintf("%s:.gitlab-ci.yml", p.Name)}); err != nil {
-		return fmt.Errorf("failed to write neo4j transaction: %w", err)
-	}
-
-	// Parse the pipeline yaml file and start the recursion on each of the sub-files
-	s.populateGraph(session, graph, rootNode, p.ID, gitlabCIFile)
-
-	// Render the graph
-	if err := g.RenderFilename(graph, graphviz.PNG, "./graph.png"); err != nil {
-		return fmt.Errorf("failed to create graph: %w", err)
-	}
 	return nil
 }
 
-func createNode(session neo4j.Session, cypher string, params map[string]interface{}) error {
-	_, err := session.WriteTransaction(func(transaction neo4j.Transaction) (interface{}, error) {
+func (s *Source) createNode(cypher string, params map[string]interface{}) error {
+	_, err := s.neo4jSession.WriteTransaction(func(transaction neo4j.Transaction) (interface{}, error) {
 		result, err := transaction.Run(cypher, params)
 		if err != nil {
 			return nil, err
@@ -114,95 +92,80 @@ func createNode(session neo4j.Session, cypher string, params map[string]interfac
 	return err
 }
 
-func (s *Source) populateGraph(session neo4j.Session, graph *cgraph.Graph, parentNode *cgraph.Node, projectIDorURL interface{}, fileName string) error {
-	var err error
+func (s *Source) ParseProject(project *gitlab.Project) error {
 
-	if Debug {
-		log.Printf("DEBUG: Populating graph for parent %s on project %s with file %s", parentNode.Name(), projectIDorURL, fileName)
+	projectCypher := fmt.Sprintf("MERGE (p:Project {name: '%s'})", project.PathWithNamespace)
+	if err := s.createNode(projectCypher, nil); err != nil {
+		return fmt.Errorf("failed to write project to neo4j: %w", err)
 	}
 
-	// First lets get the file we've been asked to process and get its includes
-	p, _, err := s.gitlabClient.Projects.GetProject(projectIDorURL, nil)
+	gitlabCIFile, err := s.getRawFileFromProject(project.ID, gitlabCIFileName, project.DefaultBranch)
 	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
+		return fmt.Errorf("failed to get file %s: %w", gitlabCIFileName, err)
 	}
 
-	file, err := s.getRawFileFromProject(projectIDorURL, fileName, p.DefaultBranch)
+	includes, err := s.parseIncludes(gitlabCIFile)
 	if err != nil {
-		return fmt.Errorf("failed to get file %s: %w", gitlabCIFile, err)
+		return fmt.Errorf("failed to parse includes for %d: %w", project.ID, err)
 	}
 
-	includes, err := s.parseIncludes(file)
-	if err != nil {
-		return fmt.Errorf("failed to parse includes for %d: %w", projectIDorURL, err)
-	}
-
-	// Now we create the nodes for each of the included projects and included files
-	for _, includedProject := range includes {
-		log.Printf("found included project %s:%s", includedProject.Project, includedProject.Ref)
-
-		// Create project node
-		templateNode, err := graph.CreateNode("Template:" + includedProject.Project + ":" + includedProject.Ref)
-		if err != nil {
-			log.Printf("failed to create file node: %s", err)
-		}
-		templateNode.SetFillColor("lightblue")
-
-		if err := createNode(session, "CREATE (t:Template {name: '"+includedProject.Project+":"+includedProject.Ref+"'})", nil); err != nil {
-			log.Printf("failed to write neo4j transaction: %s\n", err)
+	for _, i := range includes {
+		includeCypher := fmt.Sprintf("MERGE (p:Project {name: '%s'})", i.Project)
+		if err := s.createNode(includeCypher, nil); err != nil {
+			return fmt.Errorf("failed to write project to neo4j: %w", err)
 		}
 
-		// Create file nodes
-		for _, includedFile := range includedProject.Files {
-			log.Printf("found included file %s", includedFile)
-
-			fileNode, err := graph.CreateNode("File:" + includedProject.Project + ":" + includedFile)
-			if err != nil {
-				log.Printf("failed to create file node: %s", err)
-			}
-			fileNode.SetFillColor("lightgreen")
-			fileNode.SetStyle("dotted")
-
-			if err := createNode(session, "CREATE (f:File {name: $name})", map[string]interface{}{"name": includedProject.Project + ":" + includedFile}); err != nil {
-				log.Printf("failed to write neo4j transaction: %s\n", err)
-			}
-
-			templateEdge, err := graph.CreateEdge("file", fileNode, templateNode)
-			if err != nil {
-				log.Printf("failed to create file edge: %s", err)
-			}
-			templateEdge.SetLabel("owned by")
-
-			if err := createNode(session, "CREATE (f:File {name: $name})", map[string]interface{}{"name": includedProject.Project + ":" + includedFile}); err != nil {
-				log.Printf("failed to write neo4j transaction: %s\n", err)
-			}
-
-			fileEdge, err := graph.CreateEdge("file", parentNode, fileNode)
-			if err != nil {
-				log.Printf("failed to create file edge: %s", err)
-			}
-			fileEdge.SetLabel("includes")
-
-			tCypher := fmt.Sprintf("MATCH (t:Template {name: '%s'})\nMATCH (f:File {name: '%s'})\nCREATE (t)-[rel:OWNED_BY]->(f)", includedProject.Project+":"+includedProject.Ref, includedProject.Project+":"+includedFile)
-			if err := createNode(session, tCypher, nil); err != nil {
-				log.Printf("failed to write neo4j transaction: %s\n", err)
-			}
-
-			fCypher := fmt.Sprintf("MATCH (p:File {name: '%s'})\nMATCH (f:File {name: '%s'})\nCREATE (p)-[rel:INCLUDES]->(f)", strings.TrimPrefix(parentNode.Name(), "File:"), includedProject.Project+":"+includedFile)
-			if err := createNode(session, fCypher, nil); err != nil {
-				log.Printf("failed to write neo4j transaction: %s\n", err)
-			}
-
-			pCypher := fmt.Sprintf("MATCH (p:Project {name: '%s'})\nMATCH (f:File {name: '%s'})\nCREATE (p)-[rel:INCLUDES]->(f)", strings.TrimPrefix(parentNode.Name(), "Project:"), includedProject.Project+":"+includedFile)
-			if err := createNode(session, pCypher, nil); err != nil {
-				log.Printf("failed to write neo4j transaction: %s\n", err)
-			}
-
-			// Now recurse downward to do the same again for this file
-			s.populateGraph(session, graph, fileNode, includedProject.Project, includedFile)
-
+		pCypher := fmt.Sprintf("MATCH (p:Project {name: '%s'})\nMATCH (p2:Project {name: '%s'})\nMERGE (p)-[rel:INCLUDES {ref: '%s', files:'%s'}]->(p2)", project.PathWithNamespace, i.Project, i.Ref, strings.Join(i.Files, ","))
+		if err := s.createNode(pCypher, nil); err != nil {
+			return fmt.Errorf("failed to write neo4j transaction: %w", err)
 		}
 	}
 
 	return nil
+}
+
+type listProjectOutput struct {
+	projects       []*gitlab.Project
+	gitlabResponse *gitlab.Response
+}
+
+func (s *Source) iterateAllProjects(resultChan chan<- *gitlab.Project) {
+	wg := sync.WaitGroup{}
+	for nextPage := 1; nextPage != 0; {
+		log.Printf("curr page %d", nextPage)
+		wg.Add(1)
+
+		func(page int) {
+			pp := s.getProjectsFromPage(page)
+
+			nextPage = pp.gitlabResponse.NextPage
+			for _, p := range pp.projects {
+				resultChan <- p
+			}
+			wg.Done()
+		}(nextPage)
+	}
+
+	wg.Wait()
+	close(resultChan)
+}
+
+func (s *Source) getProjectsFromPage(page int) listProjectOutput {
+	projects, resp, err := s.gitlabClient.Projects.ListProjects(&gitlab.ListProjectsOptions{
+		ListOptions: gitlab.ListOptions{
+			Page:    page,
+			PerPage: 100,
+		},
+	})
+	if err != nil {
+		log.Printf("failed to get projects from page %d: %s", page, err)
+		return listProjectOutput{}
+	}
+
+	result := listProjectOutput{
+		projects:       projects,
+		gitlabResponse: resp,
+	}
+
+	return result
 }
