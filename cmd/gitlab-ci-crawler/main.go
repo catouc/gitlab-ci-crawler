@@ -12,7 +12,7 @@ import (
 
 var cfg crawler.Config
 
-func init() {
+func main() {
 	help, err := conf.Parse("", &cfg)
 	if err != nil {
 		if errors.Is(err, conf.ErrHelpWanted) {
@@ -21,9 +21,7 @@ func init() {
 		}
 		log.Fatalf("parsing config: %s", err)
 	}
-}
 
-func main() {
 	c, err := crawler.New(cfg)
 	if err != nil {
 		log.Fatalf("failed to setup crawler: %s\n", err)
