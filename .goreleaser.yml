@@ -1,0 +1,4 @@
+builds:
+  - main: ./cmd/gitlab-ci-crawler
+    env:
+      - CGO_ENABLED=0
