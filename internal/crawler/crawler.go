@@ -44,7 +44,7 @@ func New(cfg Config) (*Crawler, error) {
 		Client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
-		RateLimiter: rate.NewLimiter(rate.Every(time.Second), cfg.GitlabRPS),
+		RateLimiter: rate.NewLimiter(rate.Limit(cfg.GitlabRPS), cfg.GitlabRPS),
 	}
 
 	gitlabClient := gitlab.NewClient(cfg.GitlabHost, cfg.GitlabToken, httpClient)
