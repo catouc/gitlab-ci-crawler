@@ -12,6 +12,7 @@ import (
 
 	"github.com/deichindianer/gitlab-ci-crawler/internal/gitlab"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
+	"golang.org/x/time/rate"
 )
 
 const gitlabCIFileName = ".gitlab-ci.yml"
@@ -29,6 +30,7 @@ type Crawler struct {
 type Config struct {
 	GitlabHost    string `conf:"required,short:g,env:GITLAB_HOST"`
 	GitlabToken   string `conf:"required,short:t,env:GITLAB_TOKEN"`
+	GitlabRPS     int    `conf:"default:1,short:r,env:GITLAB_RPS"`
 	Neo4jHost     string `conf:"default:bolt://127.0.0.1:7687,flag:neo4j-host,short:n,env:NEO4J_HOST"`
 	Neo4jUsername string `conf:"default:neo4j,flag:neo4j-username,short:u,env:NEO4J_USERNAME"`
 	Neo4jPassword string `conf:"required,flag:neo4j-password,short:w,env:NEO4J_PASSWORD"`
@@ -38,9 +40,13 @@ type Config struct {
 // The caller is responsible for closing the neo4j driver and session
 // the Crawl func handles this already.
 func New(cfg Config) (*Crawler, error) {
-	httpClient := &http.Client{
-		Timeout: 5 * time.Second,
+	httpClient := &rateLimitedHTTPClient{
+		Client: &http.Client{
+			Timeout: 5 * time.Second,
+		},
+		RateLimiter: rate.NewLimiter(rate.Every(time.Second), cfg.GitlabRPS),
 	}
+
 	gitlabClient := gitlab.NewClient(cfg.GitlabHost, cfg.GitlabToken, httpClient)
 
 	driver, err := neo4j.NewDriver(cfg.Neo4jHost, neo4j.BasicAuth(cfg.Neo4jUsername, cfg.Neo4jPassword, ""))

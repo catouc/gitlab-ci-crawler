@@ -20,9 +20,13 @@ const (
 // Client holds all authentication and setup information for
 // the GitLab connection.
 type Client struct {
-	Host       string
-	Token      string
-	HTTPClient *http.Client
+	Host     string
+	Token    string
+	HTTPDoer HTTPDoer
+}
+
+type HTTPDoer interface {
+	Do(r *http.Request) (*http.Response, error)
 }
 
 // Project is a minimalist representation of a GitLab project
@@ -36,12 +40,12 @@ type Project struct {
 // NewClient sets up a client struct for all relevant GitLab auth
 // you can give it a custom http.Client as well for things like
 // timeouts.
-func NewClient(host, token string, httpClient *http.Client) *Client {
+func NewClient(host, token string, httpDoer HTTPDoer) *Client {
 
 	return &Client{
-		Host:       host,
-		Token:      token,
-		HTTPClient: httpClient,
+		Host:     host,
+		Token:    token,
+		HTTPDoer: httpDoer,
 	}
 }
 
@@ -140,7 +144,7 @@ func (c *Client) callGitLabAPI(ctx context.Context, url string) (*http.Response,
 
 	req.Header.Set(gitLabPrivateTokenHeader, c.Token)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.HTTPDoer.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call GitLab API on %s: %w", url, err)
 	}
