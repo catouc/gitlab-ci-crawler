@@ -30,7 +30,7 @@ type Crawler struct {
 type Config struct {
 	GitlabHost    string `conf:"required,short:g,env:GITLAB_HOST"`
 	GitlabToken   string `conf:"required,short:t,env:GITLAB_TOKEN"`
-	GitlabRPS     int    `conf:"default:1,short:r,env:GITLAB_RPS"`
+	GitlabMaxRPS  int    `conf:"default:1,short:r,env:GITLAB_MAX_RPS"`
 	Neo4jHost     string `conf:"default:bolt://127.0.0.1:7687,flag:neo4j-host,short:n,env:NEO4J_HOST"`
 	Neo4jUsername string `conf:"default:neo4j,flag:neo4j-username,short:u,env:NEO4J_USERNAME"`
 	Neo4jPassword string `conf:"required,flag:neo4j-password,short:w,env:NEO4J_PASSWORD"`
@@ -44,7 +44,7 @@ func New(cfg Config) (*Crawler, error) {
 		Client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
-		RateLimiter: rate.NewLimiter(rate.Limit(cfg.GitlabRPS), cfg.GitlabRPS),
+		RateLimiter: rate.NewLimiter(rate.Limit(cfg.GitlabMaxRPS), cfg.GitlabMaxRPS),
 	}
 
 	gitlabClient := gitlab.NewClient(cfg.GitlabHost, cfg.GitlabToken, httpClient)
