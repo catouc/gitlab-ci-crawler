@@ -134,9 +134,9 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			if i.Ref == "" {
 				log.Printf("Got empty ref for %s:%s", i.Project, strings.Join(i.Files, ","))
 			}
-			//log.Printf("Iterating over %s-%s\n", i.Project, i.Files)
+
 			if err := c.traverseIncludes(project.PathWithNamespace, i); err != nil {
-				return fmt.Errorf("failed to parse include %s: %w", i.Project, err)
+				log.Printf("failed to parse include %s: %s", i.Project, err)
 			}
 		}
 		return nil
