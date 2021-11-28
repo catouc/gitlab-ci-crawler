@@ -87,7 +87,12 @@ func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsCh
 			projectsChan <- p
 		}
 
-		linkHeaders, err := parseLinkHeaders(resp.Header.Get("Link"))
+		lhs := resp.Header.Get("Link")
+		if lhs == "" {
+			return nil
+		}
+
+		linkHeaders, err := parseLinkHeaders(lhs)
 		if err != nil {
 			return fmt.Errorf("failed to parse link header: %w", err)
 		}
@@ -180,8 +185,6 @@ func getNextLinkFromLinkHeaders(headers []linkHeader) linkHeader {
 	return nextLinkHeader
 }
 
-var ErrNoRFC5988LinkHeader = errors.New("given string is not valid under RFC5988")
-
 // parseLinkHeader tries to parse a list of RFC8288 compliant headers
 func parseLinkHeaders(headers string) ([]linkHeader, error) {
 	var linkHeaders []linkHeader
@@ -199,6 +202,8 @@ func parseLinkHeaders(headers string) ([]linkHeader, error) {
 	return linkHeaders, nil
 }
 
+var ErrNoRFC5988LinkHeader = errors.New("given string is not valid under RFC5988")
+
 // parseLinkHeader is an incomplete parser for RFC8288 compliant header fields.
 // It makes heavy assumptions around how GitLab uses web linking for keyset pagination.
 // See https://docs.gitlab.com/ee/api/projects.html#list-all-projects for more info.
@@ -206,6 +211,7 @@ func parseLinkHeader(header string) (linkHeader, error) {
 	var lh linkHeader
 
 	elems := strings.Split(header, ";")
+
 	if !strings.HasPrefix(elems[0], "<") {
 		return linkHeader{}, ErrNoRFC5988LinkHeader
 	}
@@ -217,7 +223,7 @@ func parseLinkHeader(header string) (linkHeader, error) {
 		return linkHeader{}, fmt.Errorf("parsed link is not a valid URL: %w", err)
 	}
 
-	if !strings.HasPrefix(strings.Trim(elems[1], " "), "rel") {
+	if !strings.HasPrefix(strings.TrimSpace(elems[1]), "rel") {
 		return linkHeader{}, ErrNoRFC5988LinkHeader
 	}
 
