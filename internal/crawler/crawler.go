@@ -18,7 +18,7 @@ import (
 const gitlabCIFileName = ".gitlab-ci.yml"
 
 type Crawler struct {
-	config       Config
+	config       *Config
 	gitlabClient *gitlab.Client
 	storage      storage.Storage
 
@@ -26,16 +26,10 @@ type Crawler struct {
 	projectSet    map[string]struct{}
 }
 
-type Config struct {
-	GitlabHost   string `conf:"required,short:g,env:GITLAB_HOST"`
-	GitlabToken  string `conf:"required,short:t,env:GITLAB_TOKEN"`
-	GitlabMaxRPS int    `conf:"default:1,short:r,env:GITLAB_MAX_RPS"`
-}
-
 // New creates a new project crawler
 // The caller is responsible for closing the neo4j driver and session
 // the Crawl func handles this already.
-func New(cfg Config, store storage.Storage) (*Crawler, error) {
+func New(cfg *Config, store storage.Storage) (*Crawler, error) {
 	httpClient := &rateLimitedHTTPClient{
 		Client: &http.Client{
 			Timeout: 5 * time.Second,

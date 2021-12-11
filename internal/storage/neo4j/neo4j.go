@@ -1,7 +1,9 @@
 package neo4j
 
 import (
+	"errors"
 	"fmt"
+	"github.com/ardanlabs/conf/v2"
 	"strings"
 
 	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
@@ -21,7 +23,15 @@ type Config struct {
 	Realm    string
 }
 
-func New(cfg Config) (*Storage, error) {
+func New(cfg *Config) (*Storage, error) {
+	help, err := conf.Parse("", cfg)
+	if err != nil {
+		if errors.Is(err, conf.ErrHelpWanted) {
+			return nil, errors.New(help)
+		}
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
 	driver, err := neo4j.NewDriver(cfg.Host, neo4jDriver.BasicAuth(cfg.Username, cfg.Password, cfg.Realm))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create neo4j driver: %w", err)
