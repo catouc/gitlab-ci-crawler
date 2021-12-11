@@ -6,10 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/cenkalti/backoff/v4"
 )
 
 const (
@@ -52,8 +56,17 @@ func NewClient(host, token string, httpDoer HTTPDoer) *Client {
 // StreamAllProjects iterates through all projects in a GitLab and streams them in batches of pageSize
 // into the projectsChan. Due to this you want to buffer the projectsChan channel to something like 2 x pageSize
 // depending on the speed and complexity of your consuming function.
+// The authentication check retries for max 30s using an exponential backoff but will exit immediately if a 401
+// has been returned. All calls after this are not retried and a failing API call will stop the stream currently.
 func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsChan chan<- Project) error {
 	defer close(projectsChan)
+
+	if err := c.checkGitLabauth(ctx); err != nil {
+		if errors.Is(err, ErrUnauthorised) {
+			return fmt.Errorf("stopping stream: %w", err)
+		}
+		return fmt.Errorf("stoppping stream: got error while checking gitlab auth: %w", err)
+	}
 
 	queryParams := url.Values{}
 	queryParams.Set("pagination", "keyset")
@@ -81,6 +94,11 @@ func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsCh
 		projects := make([]Project, 0)
 		if err := json.Unmarshal(bodyBytes, &projects); err != nil {
 			return fmt.Errorf("stopping stream, failed to unmarshal response: %w", err)
+		}
+
+		if len(projects) == 0 {
+			log.Printf("stopping stream: %s has no projects", c.Host)
+			return nil
 		}
 
 		for _, p := range projects {
@@ -136,6 +154,47 @@ func (c *Client) GetRawFileFromProject(ctx context.Context, projectID int, fileN
 	}
 
 	return bodyBytes, nil
+}
+
+var ErrUnauthorised = errors.New("client is unauthorised")
+
+func (c *Client) checkGitLabauth(ctx context.Context) error {
+	requestUrl := c.Host + "/" + gitLabAPIPath + "/version"
+
+	call := func() error {
+		resp, err := c.callGitLabAPI(ctx, requestUrl)
+		if err != nil {
+			return fmt.Errorf("failed to call %s: %w", requestUrl, err)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			return backoff.Permanent(ErrUnauthorised)
+		}
+
+		if resp.StatusCode > 299 {
+			return fmt.Errorf("http error while calling %s: %s", requestUrl, resp.Status)
+		}
+		return nil
+	}
+
+	eb := &backoff.ExponentialBackOff{
+		InitialInterval:     500 * time.Millisecond,
+		RandomizationFactor: 0.5,
+		Multiplier:          1.5,
+		MaxInterval:         5 * time.Second,
+		MaxElapsedTime:      30 * time.Second,
+		Stop:                backoff.Stop,
+		Clock:               backoff.SystemClock,
+	}
+	if err := backoff.Retry(call, eb); err != nil {
+		if errors.Is(err, ErrUnauthorised) {
+			return err
+		}
+
+		return fmt.Errorf("exhausted all retries: %w", err)
+	}
+
+	return nil
 }
 
 // callGitLabAPI is the bare minimum implementation of the GitLab API for this
