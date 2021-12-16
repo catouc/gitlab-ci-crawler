@@ -16,6 +16,7 @@ Then you can run the code like:
 ```shell
  export GITLAB_TOKEN='<personal-access-token>'
  export NEO4J_PASSWORD='<neo4j-password>'
+ export $STORAGE_BACKEND='neo4j'
 gitlab-ci-crawler --gitlab-host https://gitlab.com --neo4j-host 'bolt://127.0.0.1:7687' --neo4j-username neo4j
 ```
 
