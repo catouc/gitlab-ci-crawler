@@ -102,10 +102,12 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			return fmt.Errorf("failed to get file %s: %w", gitlabCIFileName, err)
 		}
 
-		includes, err := c.parseIncludes(gitlabCIFile, project)
+		includes, err := c.parseIncludes(gitlabCIFile)
 		if err != nil {
 			return fmt.Errorf("failed to parse includes for %d: %w", project.ID, err)
 		}
+
+		includes = enrichIncludes(includes, project)
 
 		for _, i := range includes {
 			if i.Ref == "" {

@@ -9,7 +9,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Template struct {
+type stringTemplate struct {
+	Includes StringArray `yaml:"include"`
+}
+
+type remoteTemplate struct {
 	Includes []RemoteInclude `yaml:"include"`
 }
 
@@ -20,10 +24,6 @@ type RemoteInclude struct {
 	Local    string      `yaml:"local"`
 	Template string      `yaml:"template"`
 	Children []RemoteInclude
-}
-
-type LocalIncludetemplate struct {
-	Includes string `yaml:"include"`
 }
 
 type StringArray []string
@@ -44,37 +44,57 @@ func (a *StringArray) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-func (c *Crawler) parseIncludes(file []byte, project gitlab.Project) ([]RemoteInclude, error) {
-	var parsed Template
-	if err := yaml.Unmarshal(file, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to marshal file into include format: %w", err)
+func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
+	var remoteParsed remoteTemplate
+	errorList := make([]string, 0, 2)
+
+	err := yaml.Unmarshal(file, &remoteParsed)
+	if err == nil {
+		return remoteParsed.Includes, nil
 	}
 
-	var parsedIncludes []RemoteInclude
+	errorList = append(errorList, fmt.Sprintf("failed to marshal file into remote include format: %s\n", err))
 
-	for _, parsedInclude := range parsed.Includes {
+	var stringParsed stringTemplate
+	err = yaml.Unmarshal(file, &stringParsed)
+	if err == nil {
+		remoteIncludes := make([]RemoteInclude, len(stringParsed.Includes))
+		for i, include := range stringParsed.Includes {
+			remoteIncludes[i] = RemoteInclude{
+				Local: include,
+			}
+		}
+		return remoteIncludes, nil
+	}
 
+	errorList = append(errorList, fmt.Sprintf("failed to marshal file into string include format: %s\n", err))
+
+	return nil, fmt.Errorf("parsing error: %s", strings.Join(errorList, ","))
+}
+
+func enrichIncludes(rawIncludes []RemoteInclude, project gitlab.Project) []RemoteInclude {
+	enrichedIncludes := make([]RemoteInclude, len(rawIncludes))
+
+	for i, include := range rawIncludes {
 		switch {
-		case parsedInclude.Project != "":
-			if parsedInclude.Ref == "" {
-				log.Printf("setting ref for %s:%s to `main` because no ref was specified", parsedInclude.Project, strings.Join(parsedInclude.Files, ","))
-				parsedInclude.Ref = "main" // this is not really right but less ambiguous than `""`
+		case include.Project != "":
+			if include.Ref == "" {
+				log.Printf("setting ref for %s:%s to `main` because no ref was specified", include.Project, strings.Join(include.Files, ","))
+				include.Ref = "main" // this is not really right but less ambiguous than `""`
 
 			}
-		case parsedInclude.Local != "":
-			parsedInclude.Project = project.PathWithNamespace
-			parsedInclude.Ref = project.DefaultBranch
-			parsedInclude.Files = []string{parsedInclude.Local}
-		case parsedInclude.Template != "":
-			parsedInclude.Project = project.PathWithNamespace
-			parsedInclude.Ref = project.DefaultBranch
-			parsedInclude.Files = []string{parsedInclude.Template}
+		case include.Local != "":
+			include.Project = project.PathWithNamespace
+			include.Ref = project.DefaultBranch
+			include.Files = []string{include.Local}
+		case include.Template != "":
+			include.Project = project.PathWithNamespace
+			include.Ref = project.DefaultBranch
+			include.Files = []string{include.Template}
 		default:
-			log.Printf("weird include: %+v", parsedInclude)
+			log.Printf("weird include: %+v", include)
 		}
-
-		parsedIncludes = append(parsedIncludes, parsedInclude)
+		enrichedIncludes[i] = include
 	}
-
-	return parsedIncludes, nil
+	return enrichedIncludes
 }
