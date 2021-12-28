@@ -96,7 +96,7 @@ func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsCh
 			return fmt.Errorf("stopping stream, failed to unmarshal response: %w", err)
 		}
 
-		if len(projects) == 0 {
+		if len(projects) == 0 && string(bodyBytes) != "[]" {
 			log.Printf("stopping stream: %s has no projects", c.Host)
 			return nil
 		}
