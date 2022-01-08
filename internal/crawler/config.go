@@ -32,10 +32,11 @@ func StorageFromString(s string) (Storage, error) {
 }
 
 type Config struct {
-	GitlabHost   string `conf:"required,short:g,env:GITLAB_HOST"`
-	GitlabToken  string `conf:"required,short:t,env:GITLAB_TOKEN"`
-	GitlabMaxRPS int    `conf:"default:1,short:r,env:GITLAB_MAX_RPS"`
-	Storage      string `conf:"required,short:s,env:STORAGE_BACKEND"`
+	GitlabHost     string `conf:"required,short:g,env:GITLAB_HOST"`
+	GitlabToken    string `conf:"required,short:t,env:GITLAB_TOKEN"`
+	GitlabMaxRPS   int    `conf:"default:1,short:r,env:GITLAB_MAX_RPS"`
+	Storage        string `conf:"required,short:s,env:STORAGE_BACKEND"`
+	DefaultRefName string `conf:"default:HEAD,short:d,env:DEFAULT_REF_NAME"`
 }
 
 func ParseConfig(cfg *Config) error {
