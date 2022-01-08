@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -44,7 +45,8 @@ func New(cfg *Config, store storage.Storage) (*Crawler, error) {
 	logger := log.With().
 		Str("GitlabHost", cfg.GitlabHost).
 		Int("GitLabMaxRPS", cfg.GitlabMaxRPS).
-		Logger()
+		Logger().
+		Output(zerolog.ConsoleWriter{Out: os.Stdout})
 
 	return &Crawler{
 		config:       cfg,

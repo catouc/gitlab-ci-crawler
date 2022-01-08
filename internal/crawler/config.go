@@ -3,6 +3,7 @@ package crawler
 import (
 	"errors"
 	"fmt"
+
 	"github.com/ardanlabs/conf/v2"
 )
 

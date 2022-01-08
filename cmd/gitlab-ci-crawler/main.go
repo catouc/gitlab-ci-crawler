@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"os"
 
 	"github.com/deichindianer/gitlab-ci-crawler/internal/crawler"
 	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
 	"github.com/deichindianer/gitlab-ci-crawler/internal/storage/neo4j"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -13,6 +15,7 @@ var cfg crawler.Config
 var neo4jcfg neo4j.Config
 
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	log.Info().Msg("configuring crawler...")
 	if err := crawler.ParseConfig(&cfg); err != nil {
 		log.Fatal().Err(err).Msg("failed to configure crawler")
