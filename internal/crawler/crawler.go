@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/deichindianer/gitlab-ci-crawler/internal/gitlab"
+	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/time/rate"
 )
 
@@ -21,6 +22,7 @@ type Crawler struct {
 	config       *Config
 	gitlabClient *gitlab.Client
 	storage      storage.Storage
+	logger       zerolog.Logger
 
 	projectSetMut sync.RWMutex
 	projectSet    map[string]struct{}
@@ -39,10 +41,16 @@ func New(cfg *Config, store storage.Storage) (*Crawler, error) {
 
 	gitlabClient := gitlab.NewClient(cfg.GitlabHost, cfg.GitlabToken, httpClient)
 
+	logger := log.With().
+		Str("GitlabHost", cfg.GitlabHost).
+		Int("GitLabMaxRPS", cfg.GitlabMaxRPS).
+		Logger()
+
 	return &Crawler{
 		config:       cfg,
 		gitlabClient: gitlabClient,
 		storage:      store,
+		logger:       logger,
 		projectSet:   make(map[string]struct{}),
 	}, nil
 }
@@ -51,12 +59,12 @@ func New(cfg *Config, store storage.Storage) (*Crawler, error) {
 // and parses the CI file and it's includes into the given Neo4j instance
 func (c *Crawler) Crawl(ctx context.Context) error {
 
-	log.Printf("Starting to crawl %s...\n", c.config.GitlabHost)
+	c.logger.Info().Msg("Starting to crawl...")
 	resultChan := make(chan gitlab.Project, 200)
 
 	go func() {
 		if err := c.gitlabClient.StreamAllProjects(ctx, 100, resultChan); err != nil {
-			log.Println(err)
+			c.logger.Err(err)
 		}
 	}()
 
@@ -67,7 +75,10 @@ func (c *Crawler) Crawl(ctx context.Context) error {
 		}
 
 		if err := c.updateProjectInGraph(ctx, p); err != nil {
-			log.Printf("failed to parse project: %s", err)
+			c.logger.Err(err).
+				Str("ProjectPath", p.PathWithNamespace).
+				Int("ProjectID", p.ID).
+				Msg("failed to parse project")
 		}
 	}
 
@@ -107,15 +118,20 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			return fmt.Errorf("failed to parse includes for %d: %w", project.ID, err)
 		}
 
-		includes = enrichIncludes(includes, project, c.config.DefaultRefName)
+		includes = c.enrichIncludes(includes, project, c.config.DefaultRefName)
 
 		for _, i := range includes {
 			if i.Ref == "" {
-				log.Printf("Got empty ref for %s:%s", i.Project, strings.Join(i.Files, ","))
+				c.logger.Warn().
+					Str("Project", i.Project).
+					Str("Files", strings.Join(i.Files, ",")).
+					Msg("Got empty ref")
 			}
 
 			if err := c.traverseIncludes(project.PathWithNamespace, i); err != nil {
-				log.Printf("failed to parse include %s: %s", i.Project, err)
+				c.logger.Err(err).
+					Str("Project", i.Project).
+					Msg("failed to parse include")
 			}
 		}
 		return nil

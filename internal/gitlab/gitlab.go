@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -45,7 +44,6 @@ type Project struct {
 // you can give it a custom http.Client as well for things like
 // timeouts.
 func NewClient(host, token string, httpDoer HTTPDoer) *Client {
-
 	return &Client{
 		Host:     host,
 		Token:    token,
@@ -97,7 +95,6 @@ func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsCh
 		}
 
 		if len(projects) == 0 && string(bodyBytes) != "[]" {
-			log.Printf("stopping stream: %s has no projects", c.Host)
 			return nil
 		}
 
