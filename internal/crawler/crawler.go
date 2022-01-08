@@ -107,7 +107,7 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			return fmt.Errorf("failed to parse includes for %d: %w", project.ID, err)
 		}
 
-		includes = enrichIncludes(includes, project)
+		includes = enrichIncludes(includes, project, c.config.DefaultRefName)
 
 		for _, i := range includes {
 			if i.Ref == "" {

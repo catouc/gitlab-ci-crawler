@@ -72,16 +72,15 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 	return nil, fmt.Errorf("parsing error: %s", strings.Join(errorList, ","))
 }
 
-func enrichIncludes(rawIncludes []RemoteInclude, project gitlab.Project) []RemoteInclude {
+func enrichIncludes(rawIncludes []RemoteInclude, project gitlab.Project, defaultRefName string) []RemoteInclude {
 	enrichedIncludes := make([]RemoteInclude, len(rawIncludes))
 
 	for i, include := range rawIncludes {
 		switch {
 		case include.Project != "":
 			if include.Ref == "" {
-				log.Printf("setting ref for %s:%s to `main` because no ref was specified", include.Project, strings.Join(include.Files, ","))
-				include.Ref = "main" // this is not really right but less ambiguous than `""`
-
+				log.Printf("setting ref for %s:%s to `%s` because no ref was specified", include.Project, strings.Join(include.Files, ","), defaultRefName)
+				include.Ref = defaultRefName
 			}
 		case include.Local != "":
 			include.Project = project.PathWithNamespace
