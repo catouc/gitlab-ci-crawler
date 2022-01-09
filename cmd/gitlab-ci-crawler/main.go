@@ -16,18 +16,19 @@ var neo4jcfg neo4j.Config
 
 func init() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
-}
-
-func main() {
 	if err := crawler.ParseConfig(&cfg); err != nil {
 		log.Fatal().Err(err).Msg("failed to configure crawler")
 	}
+
+	zerolog.SetGlobalLevel(zerolog.Level(cfg.LogLevel))
 
 	log.Info().
 		Str("GitlabHost", cfg.GitlabHost).
 		Int("GitLabMaxRPS", cfg.GitlabMaxRPS).
 		Msg("configured crawler")
-	
+}
+
+func main() {
 	storageLogger := log.With().Str("StorageType", cfg.Storage).Logger()
 
 	storageLogger.Info().Msg("configuring storage...")
