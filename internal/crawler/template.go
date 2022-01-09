@@ -47,12 +47,12 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 
 	rawIncludes, exist := parsed["include"]
 	if !exist {
-		return nil, nil
+		return []RemoteInclude{}, nil
 	}
 
 	includes, ok := rawIncludes.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("failed to assert include slice to interface{}")
+		return []RemoteInclude{}, fmt.Errorf("failed to assert include slice to interface{}")
 	}
 
 	rIncludes := make([]RemoteInclude, 0, len(includes))
@@ -73,7 +73,7 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 	return rIncludes, nil
 }
 
-// parseRemoteMap takes a map or a string taken from the includes out of a gitlab-ci.yml
+// parseIncludeMap takes a map or a string taken from the includes out of a gitlab-ci.yml
 // file and tries to parse them into the RemoteInclude struct.
 // Early exits are if `local`, `remote` or `template` are called.
 func (c *Crawler) parseIncludeMap(input map[string]interface{}) (RemoteInclude, error) {
