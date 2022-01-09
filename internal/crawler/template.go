@@ -6,6 +6,7 @@ import (
 
 	"github.com/deichindianer/gitlab-ci-crawler/internal/gitlab"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -61,9 +62,9 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 		case string:
 			rIncludes = append(rIncludes, RemoteInclude{Local: i})
 		case map[string]interface{}:
-			ri, err := parseIncludeMap(i)
+			ri, err := c.parseIncludeMap(i)
 			if err != nil {
-				log.Printf("failed to parse map data into RemoteInclude: %s", err)
+				c.logger.Err(err).Msg("failed to parse include map data into RemoteInclude")
 				continue
 			}
 			rIncludes = append(rIncludes, ri)
@@ -76,7 +77,7 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 // parseRemoteMap takes a map or a string taken from the includes out of a gitlab-ci.yml
 // file and tries to parse them into the RemoteInclude struct.
 // Early exits are if `local`, `remote` or `template` are called.
-func parseIncludeMap(input map[string]interface{}) (RemoteInclude, error) {
+func (c *Crawler) parseIncludeMap(input map[string]interface{}) (RemoteInclude, error) {
 	const (
 		localIncludeKey    = "local"
 		remoteIncludeKey   = "remote"
@@ -91,7 +92,9 @@ func parseIncludeMap(input map[string]interface{}) (RemoteInclude, error) {
 
 		sVal, ok := val.(string)
 		if !ok {
-			log.Printf("%+v did not assert to string, this is bad and should be reported as an issue", val)
+			c.logger.Warn().
+				Interface("Value", val).
+				Msg("`Value` did not assert to string, this is bad and should be reported as an issue")
 			continue
 		}
 
@@ -128,7 +131,9 @@ func parseIncludeMap(input map[string]interface{}) (RemoteInclude, error) {
 		for _, fVal := range f {
 			fString, ok := fVal.(string)
 			if !ok {
-				log.Printf("failed to parse %+v(%T) into string, skipping", fVal, fVal)
+				log.Debug().
+					Interface("Value", fVal).
+					Msg("failed to parse `Value` into string, skipping")
 				continue
 			}
 			sFiles = append(sFiles, fString)
@@ -141,7 +146,10 @@ func parseIncludeMap(input map[string]interface{}) (RemoteInclude, error) {
 
 	sRef, ok := ref.(string)
 	if !ok {
-		log.Printf("failed to parse %+v(%T) into string, skipping ref for %s", ref, ref, sProject)
+		c.logger.Debug().
+			Interface("Value", ref).
+			Str("Project", sProject).
+			Msg("failed to parse `Value` into string, skipping ref for `Project`")
 	}
 
 	return RemoteInclude{
