@@ -61,9 +61,9 @@ func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsCh
 
 	if err := c.checkGitLabauth(ctx); err != nil {
 		if errors.Is(err, ErrUnauthorised) {
-			return fmt.Errorf("stopping stream: %w", err)
+			return err
 		}
-		return fmt.Errorf("stoppping stream: got error while checking gitlab auth: %w", err)
+		return err
 	}
 
 	queryParams := url.Values{}

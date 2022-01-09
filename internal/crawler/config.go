@@ -37,6 +37,9 @@ type Config struct {
 	GitlabMaxRPS   int    `conf:"default:1,short:r,env:GITLAB_MAX_RPS"`
 	Storage        string `conf:"required,short:s,env:STORAGE_BACKEND"`
 	DefaultRefName string `conf:"default:HEAD,short:d,env:DEFAULT_REF_NAME"`
+	// There should be global config composition maybe? For not this lives here
+	// though this is the global log level
+	LogLevel int `conf:"default:1,env:LOG_LEVEL"`
 }
 
 func ParseConfig(cfg *Config) error {
