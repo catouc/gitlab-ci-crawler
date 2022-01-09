@@ -61,9 +61,9 @@ func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsCh
 
 	if err := c.checkGitLabauth(ctx); err != nil {
 		if errors.Is(err, ErrUnauthorised) {
-			return fmt.Errorf("stopping stream: %w", err)
+			return err
 		}
-		return fmt.Errorf("stoppping stream: got error while checking gitlab auth: %w", err)
+		return err
 	}
 
 	queryParams := url.Values{}
@@ -153,7 +153,8 @@ func (c *Client) GetRawFileFromProject(ctx context.Context, projectID int, fileN
 	return bodyBytes, nil
 }
 
-var ErrUnauthorised = errors.New("client is unauthorised")
+var ErrUnauthorised = errors.New("gitlab client is missing valid credentials")
+var ErrForbidden = errors.New("gitlan client is missing credentials to run, you need at least `read_api`")
 
 func (c *Client) checkGitLabauth(ctx context.Context) error {
 	requestUrl := c.Host + "/" + gitLabAPIPath + "/version"
@@ -168,7 +169,11 @@ func (c *Client) checkGitLabauth(ctx context.Context) error {
 			return backoff.Permanent(ErrUnauthorised)
 		}
 
-		if resp.StatusCode > 299 {
+		if resp.StatusCode == http.StatusForbidden {
+			return backoff.Permanent(ErrForbidden)
+		}
+
+		if resp.StatusCode > 499 {
 			return fmt.Errorf("http error while calling %s: %s", requestUrl, resp.Status)
 		}
 		return nil
@@ -185,6 +190,10 @@ func (c *Client) checkGitLabauth(ctx context.Context) error {
 	}
 	if err := backoff.Retry(call, eb); err != nil {
 		if errors.Is(err, ErrUnauthorised) {
+			return err
+		}
+
+		if errors.Is(err, ErrForbidden) {
 			return err
 		}
 
