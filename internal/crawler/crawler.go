@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"github.com/deichindianer/gitlab-ci-crawler/internal/gitlab"
 	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/time/rate"
 )
 
@@ -32,7 +30,7 @@ type Crawler struct {
 // New creates a new project crawler
 // The caller is responsible for closing the neo4j driver and session
 // the Crawl func handles this already.
-func New(cfg *Config, store storage.Storage) (*Crawler, error) {
+func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, error) {
 	httpClient := &rateLimitedHTTPClient{
 		Client: &http.Client{
 			Timeout: 5 * time.Second,
@@ -41,12 +39,6 @@ func New(cfg *Config, store storage.Storage) (*Crawler, error) {
 	}
 
 	gitlabClient := gitlab.NewClient(cfg.GitlabHost, cfg.GitlabToken, httpClient)
-
-	logger := log.With().
-		Str("GitlabHost", cfg.GitlabHost).
-		Int("GitLabMaxRPS", cfg.GitlabMaxRPS).
-		Logger().
-		Output(zerolog.ConsoleWriter{Out: os.Stdout})
 
 	return &Crawler{
 		config:       cfg,
@@ -66,8 +58,9 @@ func (c *Crawler) Crawl(ctx context.Context) error {
 
 	go func() {
 		if err := c.gitlabClient.StreamAllProjects(ctx, 100, resultChan); err != nil {
-			c.logger.Err(err)
+			c.logger.Err(err).Msg("stopping crawler: error in project stream")
 		}
+
 	}()
 
 	for p := range resultChan {
@@ -84,6 +77,7 @@ func (c *Crawler) Crawl(ctx context.Context) error {
 		}
 	}
 
+	c.logger.Info().Msg("stopped crawling")
 	return nil
 }
 
