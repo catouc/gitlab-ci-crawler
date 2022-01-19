@@ -1,10 +1,12 @@
 package neo4j
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/ardanlabs/conf/v2"
 	"strings"
+
+	"github.com/ardanlabs/conf/v2"
 
 	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
@@ -47,7 +49,7 @@ func New(cfg *Config) (*Storage, error) {
 	}, nil
 }
 
-func (s *Storage) CreateProjectNode(projectPath string) error {
+func (s *Storage) CreateProjectNode(_ context.Context, projectPath string) error {
 	cypher := "MERGE (p:Project {name: $projectPath})"
 	parameters := map[string]interface{}{
 		"projectPath": projectPath,
@@ -67,7 +69,7 @@ func (s *Storage) CreateProjectNode(projectPath string) error {
 	return err
 }
 
-func (s *Storage) CreateIncludeEdge(include storage.IncludeEdge) error {
+func (s *Storage) CreateIncludeEdge(_ context.Context, include storage.IncludeEdge) error {
 	cypher := "MATCH (p:Project {name: $sourceProject})\nMATCH (p2:Project {name: $targetProject})\nMERGE (p)-[rel:INCLUDES {ref: $ref, files:$files}]->(p2)"
 	parameters := map[string]interface{}{
 		"sourceProject": include.SourceProject,

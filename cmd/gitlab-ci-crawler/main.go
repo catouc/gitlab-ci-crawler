@@ -29,6 +29,9 @@ func init() {
 }
 
 func main() {
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
 	storageLogger := log.With().Str("StorageType", cfg.Storage).Logger()
 
 	storageLogger.Info().Msg("configuring storage...")
@@ -55,7 +58,7 @@ func main() {
 	}
 	log.Info().Str("Storage", cfg.Storage).Msg("successfully configured crawler with storage")
 
-	if err := c.Crawl(context.Background()); err != nil {
+	if err := c.Crawl(rootCtx); err != nil {
 		log.Fatal().Err(err).Msg("failed to gather project data")
 	}
 }
