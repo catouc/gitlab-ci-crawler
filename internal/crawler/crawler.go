@@ -97,7 +97,7 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 		c.projectSet[project.PathWithNamespace] = struct{}{}
 		c.projectSetMut.Unlock()
 
-		if err := c.storage.CreateProjectNode(project.PathWithNamespace); err != nil {
+		if err := c.storage.CreateProjectNode(ctx, project.PathWithNamespace); err != nil {
 			return fmt.Errorf("failed to write project to neo4j: %w", err)
 		}
 
@@ -124,7 +124,7 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 					Msg("Got empty ref")
 			}
 
-			if err := c.traverseIncludes(project.PathWithNamespace, i); err != nil {
+			if err := c.traverseIncludes(ctx, project.PathWithNamespace, i); err != nil {
 				c.logger.Err(err).
 					Str("Project", i.Project).
 					Msg("failed to parse include")
@@ -134,16 +134,16 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 	}
 }
 
-func (c *Crawler) traverseIncludes(parentName string, include RemoteInclude) error {
+func (c *Crawler) traverseIncludes(ctx context.Context, parentName string, include RemoteInclude) error {
 	c.projectSetMut.Lock()
 	c.projectSet[include.Project] = struct{}{}
 	c.projectSetMut.Unlock()
 
-	if err := c.storage.CreateProjectNode(include.Project); err != nil {
+	if err := c.storage.CreateProjectNode(ctx, include.Project); err != nil {
 		return fmt.Errorf("failed to write project to neo4j: %w", err)
 	}
 
-	if err := c.storage.CreateIncludeEdge(storage.IncludeEdge{
+	if err := c.storage.CreateIncludeEdge(ctx, storage.IncludeEdge{
 		SourceProject: parentName,
 		TargetProject: include.Project,
 		Ref:           include.Ref,
@@ -153,7 +153,7 @@ func (c *Crawler) traverseIncludes(parentName string, include RemoteInclude) err
 	}
 
 	for _, ci := range include.Children {
-		if err := c.traverseIncludes(ci.Project, ci); err != nil {
+		if err := c.traverseIncludes(ctx, ci.Project, ci); err != nil {
 			return fmt.Errorf("failed to write child includes for %s: %w", ci.Project, err)
 		}
 	}
