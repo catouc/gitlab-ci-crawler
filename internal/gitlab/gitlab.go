@@ -122,6 +122,25 @@ func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsCh
 	return nil
 }
 
+type RawFileError struct {
+	Err       error
+	Msg       string
+	File      string
+	Ref       string
+	ProjectID int
+}
+
+func (re *RawFileError) Error() string {
+	if re.Err == nil {
+		return re.Msg
+	}
+	return re.Msg + ": " + re.Err.Error()
+}
+
+func (re *RawFileError) Unwrap() error {
+	return re.Err
+}
+
 var ErrRawFileNotFound = errors.New("raw file was not found")
 
 // GetRawFileFromProject wraps around the raw file endpoint of GitLab helping to fetch files from specific repos
@@ -134,19 +153,44 @@ func (c *Client) GetRawFileFromProject(ctx context.Context, projectID int, fileN
 
 	resp, err := c.callGitLabAPI(ctx, requestURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get raw file %s on ref %s: %s", fileName, ref, err)
+		return nil, &RawFileError{
+			Err:       err,
+			Msg:       "failed to call GitLab API",
+			File:      fileName,
+			Ref:       ref,
+			ProjectID: projectID,
+		}
 	}
 
 	bodyBytes, err := readHTTPBody(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, &RawFileError{
+			Err:       err,
+			Msg:       "failed to read response body",
+			File:      fileName,
+			Ref:       ref,
+			ProjectID: projectID,
+		}
 	}
 
 	if resp.StatusCode > 299 {
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, ErrRawFileNotFound
+			return nil, &RawFileError{
+				Err:       ErrRawFileNotFound,
+				Msg:       "failed to get raw file",
+				File:      fileName,
+				Ref:       ref,
+				ProjectID: projectID,
+			}
 		}
-		return nil, fmt.Errorf("failed to get raw file: %s", string(bodyBytes))
+
+		return nil, &RawFileError{
+			Err:       nil,
+			Msg:       fmt.Sprintf("failed to get raw file: %s", string(bodyBytes)),
+			File:      fileName,
+			Ref:       ref,
+			ProjectID: projectID,
+		}
 	}
 
 	return bodyBytes, nil
