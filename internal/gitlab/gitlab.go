@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -231,69 +230,4 @@ func readHTTPBody(bodyReader io.ReadCloser) ([]byte, error) {
 	}
 
 	return bodyBytes, nil
-}
-
-type linkHeader struct {
-	link string
-	rel  string
-}
-
-func getNextLinkFromLinkHeaders(headers []linkHeader) linkHeader {
-	var nextLinkHeader linkHeader
-
-	for _, lh := range headers {
-		if lh.rel == "next" {
-			nextLinkHeader = lh
-		}
-	}
-
-	return nextLinkHeader
-}
-
-// parseLinkHeader tries to parse a list of RFC8288 compliant headers
-func parseLinkHeaders(headers string) ([]linkHeader, error) {
-	var linkHeaders []linkHeader
-
-	links := strings.Split(headers, ",")
-	for _, l := range links {
-		link, err := parseLinkHeader(strings.Trim(l, " "))
-		if err != nil {
-			return nil, err
-		}
-
-		linkHeaders = append(linkHeaders, link)
-	}
-
-	return linkHeaders, nil
-}
-
-var ErrNoRFC5988LinkHeader = errors.New("given string is not valid under RFC5988")
-
-// parseLinkHeader is an incomplete parser for RFC8288 compliant header fields.
-// It makes heavy assumptions around how GitLab uses web linking for keyset pagination.
-// See https://docs.gitlab.com/ee/api/projects.html#list-all-projects for more info.
-func parseLinkHeader(header string) (linkHeader, error) {
-	var lh linkHeader
-
-	elems := strings.Split(header, ";")
-
-	if !strings.HasPrefix(elems[0], "<") {
-		return linkHeader{}, ErrNoRFC5988LinkHeader
-	}
-
-	lh.link = elems[0][1 : len(elems[0])-1]
-
-	_, err := url.Parse(lh.link)
-	if err != nil {
-		return linkHeader{}, fmt.Errorf("parsed link is not a valid URL: %w", err)
-	}
-
-	if !strings.HasPrefix(strings.TrimSpace(elems[1]), "rel") {
-		return linkHeader{}, ErrNoRFC5988LinkHeader
-	}
-
-	trimmedRel := strings.TrimPrefix(strings.TrimSpace(elems[1]), "rel=")
-
-	lh.rel = trimmedRel[1 : len(trimmedRel)-1]
-	return lh, nil
 }
