@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/ardanlabs/conf/v2 v2.2.0
-	github.com/cenkalti/backoff/v4 v4.1.2
+	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/neo4j/neo4j-go-driver/v4 v4.4.2
 	github.com/rs/zerolog v1.26.1
 	github.com/stretchr/testify v1.7.0
