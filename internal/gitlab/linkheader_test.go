@@ -2,9 +2,10 @@ package gitlab
 
 import (
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"net/url"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseLinkHeader(t *testing.T) {

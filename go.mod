@@ -1,4 +1,4 @@
-module github.com/deichindianer/gitlab-ci-crawler
+module github.com/catouc/gitlab-ci-crawler
 
 go 1.17
 

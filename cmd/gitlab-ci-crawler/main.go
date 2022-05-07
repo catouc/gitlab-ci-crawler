@@ -4,9 +4,9 @@ import (
 	"context"
 	"os"
 
-	"github.com/deichindianer/gitlab-ci-crawler/internal/crawler"
-	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
-	"github.com/deichindianer/gitlab-ci-crawler/internal/storage/neo4j"
+	"github.com/catouc/gitlab-ci-crawler/internal/crawler"
+	"github.com/catouc/gitlab-ci-crawler/internal/storage"
+	"github.com/catouc/gitlab-ci-crawler/internal/storage/neo4j"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )

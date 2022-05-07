@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deichindianer/gitlab-ci-crawler/internal/gitlab"
-	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
+	"github.com/catouc/gitlab-ci-crawler/internal/gitlab"
+	"github.com/catouc/gitlab-ci-crawler/internal/storage"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 )

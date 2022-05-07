@@ -8,7 +8,7 @@ import (
 
 	"github.com/ardanlabs/conf/v2"
 
-	"github.com/deichindianer/gitlab-ci-crawler/internal/storage"
+	"github.com/catouc/gitlab-ci-crawler/internal/storage"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 	neo4jDriver "github.com/neo4j/neo4j-go-driver/v4/neo4j"
 )

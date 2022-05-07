@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/deichindianer/gitlab-ci-crawler/internal/gitlab"
+	"github.com/catouc/gitlab-ci-crawler/internal/gitlab"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
