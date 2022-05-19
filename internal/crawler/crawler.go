@@ -49,17 +49,27 @@ func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, e
 }
 
 // Crawl iterates through every project in the given GitLab host
-// and parses the CI file and it's includes into the given Neo4j instance
+// and parses the CI file, and it's includes into the given Neo4j instance
 func (c *Crawler) Crawl(ctx context.Context) error {
+	if c.config.StorageCleanup {
+		c.logger.Info().Msg("Cleanup storage...")
+		err := c.storage.RemoveAll(ctx)
+		if err != nil {
+			return err
+		}
+	}
 
 	c.logger.Info().Msg("Starting to crawl...")
 	resultChan := make(chan gitlab.Project, 200)
+
+	var streamOK bool
 
 	go func() {
 		if err := c.gitlabClient.StreamAllProjects(ctx, 100, resultChan); err != nil {
 			c.logger.Err(err).Msg("stopping crawler: error in project stream")
 		}
-
+		streamOK = true
+		close(resultChan)
 	}()
 
 	for p := range resultChan {
@@ -74,6 +84,10 @@ func (c *Crawler) Crawl(ctx context.Context) error {
 				Int("ProjectID", p.ID).
 				Msg("failed to parse project")
 		}
+	}
+
+	if !streamOK {
+		return errors.New("stream failed")
 	}
 
 	c.logger.Info().Msg("stopped crawling")

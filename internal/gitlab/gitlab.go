@@ -56,8 +56,6 @@ func NewClient(host, token string, httpDoer HTTPDoer) *Client {
 // The authentication check retries for max 30s using an exponential backoff but will exit immediately if a 401
 // has been returned. All calls after this are not retried and a failing API call will stop the stream currently.
 func (c *Client) StreamAllProjects(ctx context.Context, pageSize int, projectsChan chan<- Project) error {
-	defer close(projectsChan)
-
 	if err := c.checkGitLabauth(ctx); err != nil {
 		if errors.Is(err, ErrUnauthorised) {
 			return err
