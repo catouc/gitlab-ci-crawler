@@ -3,7 +3,7 @@ builds:
     env:
       - CGO_ENABLED=0
 dockers:
-  - dockerfile: Dockerfile
+  - dockerfile: Dockerfile_release
     image_templates:
       - ghcr.io/catouc/gitlab-ci-crawler:latest
       - ghcr.io/catouc/gitlab-ci-crawler:{{ .Tag }}
