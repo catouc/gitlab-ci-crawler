@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/catouc/gitlab-ci-crawler/internal/gitlab"
 	"github.com/catouc/gitlab-ci-crawler/internal/storage"
@@ -33,7 +32,7 @@ type Crawler struct {
 func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, error) {
 	httpClient := &rateLimitedHTTPClient{
 		Client: &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout: cfg.HTTPClientTimeout,
 		},
 		RateLimiter: rate.NewLimiter(rate.Limit(cfg.GitlabMaxRPS), cfg.GitlabMaxRPS),
 	}
