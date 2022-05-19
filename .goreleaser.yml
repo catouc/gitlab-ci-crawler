@@ -2,3 +2,10 @@ builds:
   - main: ./cmd/gitlab-ci-crawler
     env:
       - CGO_ENABLED=0
+dockers:
+  - dockerfile: Dockerfile
+    image_templates:
+      - ghcr.io/catouc/gitlab-ci-crawler:latest
+      - ghcr.io/catouc/gitlab-ci-crawler:{{ .Tag }}
+      - ghcr.io/catouc/gitlab-ci-crawler:{{ .Major }}.{{ .Minor }}
+      - ghcr.io/catouc/gitlab-ci-crawler:{{ .Major }}
