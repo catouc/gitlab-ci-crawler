@@ -1,5 +1,5 @@
 FROM alpine:3.15
 WORKDIR /opt/app
-COPY ./dist/gitlab-ci-crawler_linux_amd64_v1/gitlab-ci-crawler /opt/app/gitlab-ci-crawler
+COPY gitlab-ci-crawler /opt/app/gitlab-ci-crawler
 USER 65534
 CMD ["/opt/app/gitlab-ci-crawler"]
