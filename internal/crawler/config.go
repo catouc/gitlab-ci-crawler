@@ -38,6 +38,7 @@ type Config struct {
 	GitlabToken       string        `conf:"required,short:t,env:GITLAB_TOKEN"`
 	GitlabMaxRPS      int           `conf:"default:1,short:r,env:GITLAB_MAX_RPS"`
 	Storage           string        `conf:"required,short:s,env:STORAGE_BACKEND"`
+	StorageCleanup    bool          `conf:"default:false,short:c,env:STORAGE_CLEANUP"`
 	DefaultRefName    string        `conf:"default:HEAD,short:d,env:DEFAULT_REF_NAME"`
 	HTTPClientTimeout time.Duration `conf:"default:5s,short:x,env:HTTP_CLIENT_TIMEOUT"`
 	// There should be global config composition maybe? For not this lives here

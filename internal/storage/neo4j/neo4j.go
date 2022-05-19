@@ -91,3 +91,21 @@ func (s *Storage) CreateIncludeEdge(_ context.Context, include storage.IncludeEd
 	})
 	return err
 }
+
+func (s *Storage) RemoveAll(_ context.Context) error {
+	cypher := "MATCH (n) DETACH DELETE n"
+	parameters := map[string]interface{}{}
+	_, err := s.Session.WriteTransaction(func(transaction neo4j.Transaction) (interface{}, error) {
+		result, err := transaction.Run(cypher, parameters)
+		if err != nil {
+			return nil, err
+		}
+
+		if result.Next() {
+			return nil, nil
+		}
+
+		return nil, result.Err()
+	})
+	return err
+}
