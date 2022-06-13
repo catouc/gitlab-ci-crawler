@@ -50,9 +50,15 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 		return []RemoteInclude{}, nil
 	}
 
-	includes, ok := rawIncludes.([]interface{})
-	if !ok {
-		return []RemoteInclude{}, fmt.Errorf("failed to assert include slice to interface{}")
+	includes := make([]interface{}, 0)
+
+	switch t := rawIncludes.(type) {
+	case string:
+		includes = append(includes, t)
+	case []interface{}:
+		copy(includes, t)
+	default:
+		return []RemoteInclude{}, fmt.Errorf("failed to process include type: %T", t)
 	}
 
 	rIncludes := make([]RemoteInclude, 0, len(includes))
