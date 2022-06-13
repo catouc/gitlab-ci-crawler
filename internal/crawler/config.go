@@ -43,7 +43,8 @@ type Config struct {
 	HTTPClientTimeout time.Duration `conf:"default:5s,short:x,env:HTTP_CLIENT_TIMEOUT"`
 	// There should be global config composition maybe? For not this lives here
 	// though this is the global log level
-	LogLevel int `conf:"default:1,env:LOG_LEVEL"`
+	LogLevel  int    `conf:"default:1,env:LOG_LEVEL"`
+	LogFormat string `conf:"default:json,env:LOG_FORMAT"`
 }
 
 func ParseConfig(cfg *Config) error {
