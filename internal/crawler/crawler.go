@@ -114,6 +114,14 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			return fmt.Errorf("failed to write project to neo4j: %w", err)
 		}
 
+		if len(project.DefaultBranch) == 0 {
+			c.logger.Debug().
+				Str("Project", project.PathWithNamespace).
+				Msg("Project has no DefaultBranch")
+
+			return nil
+		}
+
 		gitlabCIFile, err := c.gitlabClient.GetRawFileFromProject(ctx, project.ID, gitlabCIFileName, project.DefaultBranch)
 		if err != nil {
 			if errors.Is(err, gitlab.ErrRawFileNotFound) {
@@ -143,6 +151,7 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 					Msg("failed to parse include")
 			}
 		}
+
 		return nil
 	}
 }
