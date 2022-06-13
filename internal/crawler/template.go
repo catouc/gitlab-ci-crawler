@@ -53,7 +53,9 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 	includes := make([]interface{}, 0)
 
 	switch t := rawIncludes.(type) {
-	case string:
+	case nil:
+		// noop
+	case string, map[string]interface{}:
 		includes = append(includes, t)
 	case []interface{}:
 		copy(includes, t)
