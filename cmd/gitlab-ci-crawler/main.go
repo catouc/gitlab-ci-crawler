@@ -15,9 +15,19 @@ var cfg crawler.Config
 var neo4jcfg neo4j.Config
 
 func init() {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	if err := crawler.ParseConfig(&cfg); err != nil {
-		log.Fatal().Err(err).Msg("failed to configure crawler")
+		log.Fatal().Err(err).Msg("failed to parse crawler config")
+	}
+
+	switch cfg.LogFormat {
+	case "text":
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+	case "json":
+		log.Logger = log.Output(os.Stdout)
+	default:
+		log.Fatal().
+			Str("LogFormat", cfg.LogFormat).
+			Msg("unsupported log format")
 	}
 
 	zerolog.SetGlobalLevel(zerolog.Level(cfg.LogLevel))
