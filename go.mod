@@ -7,7 +7,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/neo4j/neo4j-go-driver/v4 v4.4.3
 	github.com/rs/zerolog v1.27.0
-	github.com/stretchr/testify v1.7.2
+	github.com/stretchr/testify v1.7.4
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858
 	gopkg.in/yaml.v3 v3.0.1
 )
