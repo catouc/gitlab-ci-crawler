@@ -49,18 +49,18 @@ func main() {
 	var s storage.Storage
 	switch cfg.Storage {
 	case "neo4j":
-		s, err = neo4j.New(&neo4j.Config{
-			Host:     neo4jcfg.Host,
-			Username: neo4jcfg.Username,
-			Password: neo4jcfg.Password,
-			Realm:    "",
-		})
-	}
-	if err != nil {
-		storageLogger.Fatal().Err(err).Msg("failed to configure storage")
-	}
+		s, err = neo4j.New(&neo4jcfg)
+		if err != nil {
+			storageLogger.Fatal().Err(err).Msg("failed to configure storage")
+		}
 
-	storageLogger.Info().Msg("successfully configured storage")
+		storageLogger.Info().
+			Str("Host", neo4jcfg.Host).
+			Str("Username", neo4jcfg.Username).
+			Msg("successfully configured storage")
+	default:
+		storageLogger.Fatal().Msgf("unknown storage: %s", cfg.Storage)
+	}
 
 	c, err := crawler.New(&cfg, log.Logger, s)
 	if err != nil {
