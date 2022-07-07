@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ardanlabs/conf/v2"
 
@@ -39,6 +40,10 @@ func New(cfg *Config) (*Storage, error) {
 		return nil, fmt.Errorf("failed to create neo4j driver: %w", err)
 	}
 
+	if err := driver.VerifyConnectivity(); err != nil {
+		return nil, fmt.Errorf("neo4j connectivity check failed: %w", err)
+	}
+
 	session := driver.NewSession(neo4j.SessionConfig{
 		AccessMode: neo4j.AccessModeWrite,
 	})
@@ -65,6 +70,8 @@ func (s *Storage) CreateProjectNode(_ context.Context, projectPath string) error
 		}
 
 		return nil, result.Err()
+	}, func(config *neo4jDriver.TransactionConfig) {
+		config.Timeout = 15 * time.Second
 	})
 	return err
 }
@@ -88,6 +95,8 @@ func (s *Storage) CreateIncludeEdge(_ context.Context, include storage.IncludeEd
 		}
 
 		return nil, result.Err()
+	}, func(config *neo4jDriver.TransactionConfig) {
+		config.Timeout = 15 * time.Second
 	})
 	return err
 }
@@ -106,6 +115,8 @@ func (s *Storage) RemoveAll(_ context.Context) error {
 		}
 
 		return nil, result.Err()
+	}, func(config *neo4jDriver.TransactionConfig) {
+		config.Timeout = 60 * time.Second
 	})
 	return err
 }

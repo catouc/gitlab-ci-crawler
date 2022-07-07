@@ -55,10 +55,14 @@ func (c *Crawler) parseIncludes(file []byte) ([]RemoteInclude, error) {
 	switch t := rawIncludes.(type) {
 	case nil:
 		// noop
+		c.logger.Debug().Msg("ignore nil include")
 	case string, map[string]interface{}:
 		includes = append(includes, t)
+		c.logger.Debug().Msgf("append %T include", t)
 	case []interface{}:
+		includes = make([]interface{}, len(t))
 		copy(includes, t)
+		c.logger.Debug().Msg("copy include slice")
 	default:
 		return []RemoteInclude{}, fmt.Errorf("failed to process include type: %T", t)
 	}
