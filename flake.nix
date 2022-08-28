@@ -35,7 +35,8 @@
       devShell = pkgs.mkShell {
         buildInputs = [
           pkgs.go_1_18
-          pkgs.neo4j
+          pkgs.docker
+          pkgs.gcc
         ];
 
         shellHook = ''
