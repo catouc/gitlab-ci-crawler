@@ -50,6 +50,28 @@ func NewClient(host, token string, httpDoer HTTPDoer) *Client {
 	}
 }
 
+func (c *Client) GetProjectFromPath(ctx context.Context, projectPath string) (Project, error) {
+	requestURL := fmt.Sprintf("%s/%s/projects/%s", c.Host, gitLabAPIPath, url.PathEscape(projectPath))
+	resp, err := c.callGitLabAPI(ctx, requestURL)
+	if err != nil {
+		return Project{}, fmt.Errorf("failed to get project: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Project{}, fmt.Errorf("failed to parse response body: %w", err)
+	}
+
+	var p Project
+	err = json.Unmarshal(bodyBytes, &p)
+	if err != nil {
+		return Project{}, fmt.Errorf("failed to unmarshal bodyBytes: %w", err)
+	}
+
+	return p, nil
+}
+
 // StreamAllProjects iterates through all projects in a GitLab and streams them in batches of pageSize
 // into the projectsChan. Due to this you want to buffer the projectsChan channel to something like 2 x pageSize
 // depending on the speed and complexity of your consuming function.
@@ -147,7 +169,7 @@ var ErrRawFileNotFound = errors.New("raw file was not found")
 func (c *Client) GetRawFileFromProject(ctx context.Context, projectID int, fileName, ref string) ([]byte, error) {
 	queryParams := url.Values{}
 	queryParams.Add("ref", ref)
-	requestURL := fmt.Sprintf("%s/%s/projects/%d/repository/files/%s/raw?%s", c.Host, gitLabAPIPath, projectID, fileName, queryParams.Encode())
+	requestURL := fmt.Sprintf("%s/%s/projects/%d/repository/files/%s/raw?%s", c.Host, gitLabAPIPath, projectID, url.PathEscape(fileName), queryParams.Encode())
 
 	resp, err := c.callGitLabAPI(ctx, requestURL)
 	if err != nil {
