@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/catouc/gitlab-ci-crawler/internal/crawler"
@@ -16,7 +17,8 @@ var neo4jcfg neo4j.Config
 
 func init() {
 	if err := crawler.ParseConfig(&cfg); err != nil {
-		log.Fatal().Err(err).Msg("failed to parse crawler config")
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	switch cfg.LogFormat {
