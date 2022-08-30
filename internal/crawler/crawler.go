@@ -122,38 +122,58 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			return nil
 		}
 
-		gitlabCIFile, err := c.gitlabClient.GetRawFileFromProject(ctx, project.ID, gitlabCIFileName, project.DefaultBranch)
+		err := c.handleIncludes(ctx, project, gitlabCIFileName)
 		if err != nil {
-			if errors.Is(err, gitlab.ErrRawFileNotFound) {
-				return nil
-			}
-			return fmt.Errorf("failed to get file %s: %w", gitlabCIFileName, err)
+			c.logger.Err(err).Msg("failed to handle all includes")
 		}
-
-		includes, err := c.parseIncludes(gitlabCIFile)
-		if err != nil {
-			return fmt.Errorf("failed to parse includes for %d: %w", project.ID, err)
-		}
-
-		includes = c.enrichIncludes(includes, project, c.config.DefaultRefName)
-
-		for _, i := range includes {
-			if i.Ref == "" {
-				c.logger.Warn().
-					Str("Project", i.Project).
-					Str("Files", strings.Join(i.Files, ",")).
-					Msg("Got empty ref")
-			}
-
-			if err := c.traverseIncludes(ctx, project.PathWithNamespace, i); err != nil {
-				c.logger.Err(err).
-					Str("Project", i.Project).
-					Msg("failed to parse include")
-			}
-		}
-
 		return nil
 	}
+}
+
+func (c *Crawler) handleIncludes(ctx context.Context, project gitlab.Project, filePath string) error {
+	gitlabCIFile, err := c.gitlabClient.GetRawFileFromProject(ctx, project.ID, filePath, project.DefaultBranch)
+	if err != nil {
+		if errors.Is(err, gitlab.ErrRawFileNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to get file %s: %w", filePath, err)
+	}
+
+	includes, err := c.parseIncludes(gitlabCIFile)
+	if err != nil {
+		return fmt.Errorf("failed to parse includes: %w", err)
+	}
+
+	includes = c.enrichIncludes(includes, project, c.config.DefaultRefName)
+
+	for _, i := range includes {
+		if i.Ref == "" {
+			c.logger.Warn().
+				Str("Project", i.Project).
+				Str("Files", strings.Join(i.Files, ",")).
+				Msg("Got empty ref")
+		}
+
+		if err = c.traverseIncludes(ctx, project.PathWithNamespace, i); err != nil {
+			c.logger.Err(err).
+				Str("Project", i.Project).
+				Msg("failed to parse include")
+		}
+
+		p, err := c.gitlabClient.GetProjectFromPath(ctx, i.Project)
+		if err != nil {
+			return err
+		}
+
+		for _, f := range i.Files {
+			err = c.handleIncludes(ctx, p, f)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (c *Crawler) traverseIncludes(ctx context.Context, parentName string, include RemoteInclude) error {
