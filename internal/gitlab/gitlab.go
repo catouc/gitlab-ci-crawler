@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rs/zerolog"
 	"io"
 	"net/http"
 	"net/url"
@@ -25,6 +26,7 @@ type Client struct {
 	Host     string
 	Token    string
 	HTTPDoer HTTPDoer
+	Logger   zerolog.Logger
 }
 
 type HTTPDoer interface {
@@ -42,11 +44,12 @@ type Project struct {
 // NewClient sets up a client struct for all relevant GitLab auth
 // you can give it a custom http.Client as well for things like
 // timeouts.
-func NewClient(host, token string, httpDoer HTTPDoer) *Client {
+func NewClient(host, token string, httpDoer HTTPDoer, logger zerolog.Logger) *Client {
 	return &Client{
 		Host:     host,
 		Token:    token,
 		HTTPDoer: httpDoer,
+		Logger:   logger,
 	}
 }
 
@@ -170,6 +173,7 @@ func (c *Client) GetRawFileFromProject(ctx context.Context, projectID int, fileN
 	queryParams := url.Values{}
 	queryParams.Add("ref", ref)
 	requestURL := fmt.Sprintf("%s/%s/projects/%d/repository/files/%s/raw?%s", c.Host, gitLabAPIPath, projectID, url.PathEscape(fileName), queryParams.Encode())
+	c.Logger.Trace().Str("RequestURL", requestURL).Msg("requesting raw file from GitLab")
 
 	resp, err := c.callGitLabAPI(ctx, requestURL)
 	if err != nil {

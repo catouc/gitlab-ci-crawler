@@ -37,7 +37,7 @@ func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, e
 		RateLimiter: rate.NewLimiter(rate.Limit(cfg.GitlabMaxRPS), cfg.GitlabMaxRPS),
 	}
 
-	gitlabClient := gitlab.NewClient(cfg.GitlabHost, cfg.GitlabToken, httpClient)
+	gitlabClient := gitlab.NewClient(cfg.GitlabHost, cfg.GitlabToken, httpClient, logger)
 
 	return &Crawler{
 		config:       cfg,
@@ -124,7 +124,10 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 
 		err := c.handleIncludes(ctx, project, gitlabCIFileName)
 		if err != nil {
-			c.logger.Err(err).Msg("failed to handle all includes")
+			c.logger.Error().
+				Err(err).
+				Str("Project", project.PathWithNamespace).
+				Msg("failed to handle all includes")
 		}
 		return nil
 	}
