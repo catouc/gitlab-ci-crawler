@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rs/zerolog"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/cenkalti/backoff/v4"
 )
@@ -172,7 +174,8 @@ var ErrRawFileNotFound = errors.New("raw file was not found")
 func (c *Client) GetRawFileFromProject(ctx context.Context, projectID int, fileName, ref string) ([]byte, error) {
 	queryParams := url.Values{}
 	queryParams.Add("ref", ref)
-	requestURL := fmt.Sprintf("%s/%s/projects/%d/repository/files/%s/raw?%s", c.Host, gitLabAPIPath, projectID, url.PathEscape(fileName), queryParams.Encode())
+	requestFileName := url.PathEscape(strings.TrimPrefix(fileName, "/"))
+	requestURL := fmt.Sprintf("%s/%s/projects/%d/repository/files/%s/raw?%s", c.Host, gitLabAPIPath, projectID, requestFileName, queryParams.Encode())
 	c.Logger.Trace().Str("RequestURL", requestURL).Msg("requesting raw file from GitLab")
 
 	resp, err := c.callGitLabAPI(ctx, requestURL)
