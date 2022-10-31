@@ -1,6 +1,7 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils/v1.0.0";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
 
   description = "gitlab-ci-crawler, building a dependency graph for CI includes";
@@ -12,7 +13,7 @@
   in
     rec {
       packages = flake-utils.lib.flattenTree {
-        gitlabCICrawler = pkgs.buildGo118Module {
+        gitlabCICrawler = pkgs.buildGoModule {
           pname = "gitalb-ci-crawler";
           version = "v0.13.1";
           modSha256 = pkgs.lib.fakeSha256;
