@@ -34,7 +34,7 @@
 
       devShell = pkgs.mkShell {
         buildInputs = [
-          pkgs.go_1_18
+          pkgs.go
           pkgs.docker
           pkgs.gcc
         ];
