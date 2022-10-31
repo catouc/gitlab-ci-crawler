@@ -15,7 +15,7 @@
       packages = flake-utils.lib.flattenTree {
         gitlabCICrawler = pkgs.buildGoModule {
           pname = "gitalb-ci-crawler";
-          version = "v0.13.5";
+          version = "v0.13.6";
           modSha256 = pkgs.lib.fakeSha256;
           vendorSha256 = null;
           src = ./.;
