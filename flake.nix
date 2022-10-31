@@ -15,7 +15,7 @@
       packages = flake-utils.lib.flattenTree {
         gitlabCICrawler = pkgs.buildGoModule {
           pname = "gitalb-ci-crawler";
-          version = "v0.13.1";
+          version = "v0.13.4";
           modSha256 = pkgs.lib.fakeSha256;
           vendorSha256 = null;
           src = ./.;
@@ -35,11 +35,10 @@
 
       devShell = pkgs.mkShell {
         buildInputs = [
-          pkgs.go
           pkgs.docker
           pkgs.gcc
+          pkgs.go
         ];
-
         shellHook = ''
           export NEO4J_USERNAME='neo4j'
           export NEO4J_PASSWORD='neo4j'
