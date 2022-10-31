@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"github.com/rs/zerolog"
 	"io"
 	"net/http"
 	"strings"
@@ -77,7 +78,7 @@ func TestClient_GetRawFileFromProject(t *testing.T) {
 			d := doer{
 				doFunc: td.DoFunc,
 			}
-			c := NewClient("https://example.com", "", &d)
+			c := NewClient("https://example.com", "", &d, zerolog.Logger{})
 			bytes, err := c.GetRawFileFromProject(context.TODO(), 1, ".gitlab-ci.yml", "master")
 
 			if td.Err != nil {
