@@ -42,7 +42,7 @@ github.com/stretchr/testify/assert
 ## explicit; go 1.17
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
-# golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9
+# golang.org/x/time v0.1.0
 ## explicit
 golang.org/x/time/rate
 # gopkg.in/yaml.v3 v3.0.1
