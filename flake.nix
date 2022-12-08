@@ -32,6 +32,8 @@
         default = build;
       };
 
+      hydraJobs = {inherit packages;};
+
       devShells = {
         default = pkgs.mkShell {
           buildInputs = [
