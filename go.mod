@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/ardanlabs/conf/v2 v2.2.0
+	github.com/ardanlabs/conf/v3 v3.1.3
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/neo4j/neo4j-go-driver/v4 v4.4.4
 	github.com/rs/zerolog v1.28.0
