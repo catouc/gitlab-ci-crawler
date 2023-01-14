@@ -8,7 +8,7 @@ require (
 	github.com/neo4j/neo4j-go-driver/v4 v4.4.4
 	github.com/rs/zerolog v1.28.0
 	github.com/stretchr/testify v1.8.1
-	golang.org/x/time v0.2.0
+	golang.org/x/time v0.3.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
