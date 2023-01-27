@@ -36,6 +36,9 @@ github.com/neo4j/neo4j-go-driver/v4 v4.4.3 h1:uIP106GZwdWjbJY6jxRavHVPeUWKMTcR+c
 github.com/neo4j/neo4j-go-driver/v4 v4.4.3/go.mod h1:NexOfrm4c317FVjekrhVV8pHBXgtMG5P6GeweJWCyo4=
 github.com/neo4j/neo4j-go-driver/v4 v4.4.4 h1:SWVwM+F76eGeJaXSOw61zn5MHpHHsaM75ceRZytst9U=
 github.com/neo4j/neo4j-go-driver/v4 v4.4.4/go.mod h1:NexOfrm4c317FVjekrhVV8pHBXgtMG5P6GeweJWCyo4=
+github.com/neo4j/neo4j-go-driver/v4 v4.4.5 h1:1jakJeLnjZ3rB7Oh9PYVLUwCGduE43NLOz43M/pGKFU=
+github.com/neo4j/neo4j-go-driver/v4 v4.4.5/go.mod h1:NexOfrm4c317FVjekrhVV8pHBXgtMG5P6GeweJWCyo4=
+github.com/neo4j/neo4j-go-driver/v5 v5.5.0/go.mod h1:Vff8OwT7QpLm7L2yYr85XNWe9Rbqlbeb9asNXJTHO4k=
 github.com/nxadm/tail v1.4.4/go.mod h1:kenIhsEOeOJmVchQTgglprH7qJGnHDVpk1VPCcaMI8A=
 github.com/nxadm/tail v1.4.8/go.mod h1:+ncqLTQzXmGhMZNUePPaPqPvBxHAIsmXswZKocGu+AU=
 github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
