@@ -3,9 +3,8 @@ package crawler
 import (
 	"errors"
 	"fmt"
+	"github.com/ardanlabs/conf/v3"
 	"time"
-
-	"github.com/ardanlabs/conf/v2"
 )
 
 const (

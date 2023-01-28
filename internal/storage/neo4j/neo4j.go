@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ardanlabs/conf/v3"
 	"strings"
 	"time"
 
-	"github.com/ardanlabs/conf/v2"
-
 	"github.com/catouc/gitlab-ci-crawler/internal/storage"
-	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
-	neo4jDriver "github.com/neo4j/neo4j-go-driver/v4/neo4j"
+	neo4jDriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 type Storage struct {
