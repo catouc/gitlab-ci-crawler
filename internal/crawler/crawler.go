@@ -65,11 +65,14 @@ func (c *Crawler) Crawl(ctx context.Context) error {
 	var streamOK bool
 
 	go func() {
+		defer close(resultChan)
+
 		if err := c.gitlabClient.StreamAllProjects(ctx, 100, resultChan); err != nil {
 			c.logger.Err(err).Msg("stopping crawler: error in project stream")
+			return
 		}
+
 		streamOK = true
-		close(resultChan)
 	}()
 
 	for p := range resultChan {
