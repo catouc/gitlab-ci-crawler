@@ -9,6 +9,12 @@ github.com/cenkalti/backoff/v4
 github.com/davecgh/go-spew/spew
 # github.com/google/go-cmp v0.5.5
 ## explicit; go 1.8
+# github.com/hashicorp/go-cleanhttp v0.5.2
+## explicit; go 1.13
+github.com/hashicorp/go-cleanhttp
+# github.com/hashicorp/go-retryablehttp v0.7.2
+## explicit; go 1.13
+github.com/hashicorp/go-retryablehttp
 # github.com/mattn/go-colorable v0.1.12
 ## explicit; go 1.13
 github.com/mattn/go-colorable
