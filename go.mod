@@ -3,7 +3,7 @@ module github.com/catouc/gitlab-ci-crawler
 go 1.19
 
 require (
-	github.com/ardanlabs/conf/v3 v3.1.3
+	github.com/ardanlabs/conf/v3 v3.1.5
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/neo4j/neo4j-go-driver/v5 v5.5.0
 	github.com/rs/zerolog v1.29.0
