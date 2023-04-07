@@ -10,6 +10,7 @@ import (
 
 	"github.com/catouc/gitlab-ci-crawler/internal/gitlab"
 	"github.com/catouc/gitlab-ci-crawler/internal/storage"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 )
@@ -30,10 +31,15 @@ type Crawler struct {
 // The caller is responsible for closing the neo4j driver and session
 // the Crawl func handles this already.
 func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, error) {
+	retryClient := retryablehttp.NewClient()
+
+	retryClient.RetryMax = cfg.HTTPClientMaxRetry
+	retryClient.RetryWaitMax = cfg.HTTPClientMaxRetryWait
+	retryClient.RetryWaitMin = cfg.HTTPClientMinRetryWait
+	retryClient.HTTPClient = &http.Client{Timeout: cfg.HTTPClientTimeout}
+
 	httpClient := &rateLimitedHTTPClient{
-		Client: &http.Client{
-			Timeout: cfg.HTTPClientTimeout,
-		},
+		Client:      retryClient.StandardClient(),
 		RateLimiter: rate.NewLimiter(rate.Limit(cfg.GitlabMaxRPS), cfg.GitlabMaxRPS),
 	}
 
