@@ -22,7 +22,6 @@ package neo4j
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/errorutil"
@@ -53,7 +52,8 @@ const (
 type DriverWithContext interface {
 	// DefaultExecuteQueryBookmarkManager returns the bookmark manager instance used by ExecuteQuery by default.
 	//
-	// This API is currently experimental and may change or be removed at any time.
+	// DefaultExecuteQueryBookmarkManager is part of the BookmarkManager preview feature (see README on what it means in
+	// terms of support and compatibility guarantees)
 	//
 	// This is useful when ExecuteQuery is called without custom bookmark managers and the lower-level
 	// neo4j.SessionWithContext APIs are called as well.
@@ -88,16 +88,17 @@ type DriverWithContext interface {
 
 // ResultTransformer is a record accumulator that produces an instance of T when the processing of records is over.
 //
-// This API is currently experimental and may change or be removed at any time.
+// ResultTransformer is part of the ExecuteQuery preview feature (see README on what it means in terms of support
+// and compatibility guarantees)
 type ResultTransformer[T any] interface {
 	// Accept is called whenever a new record is fetched from the server
 	// Implementers are free to accumulate or discard the specified record
-	Accept(*Record)
+	Accept(*Record) error
 
 	// Complete is called when the record fetching is over and no error occurred.
 	// In particular, it is important to note that Accept may be called several times before an error occurs.
 	// In that case, Complete will not be called.
-	Complete([]string, ResultSummary) T
+	Complete(keys []string, summary ResultSummary) (T, error)
 }
 
 // NewDriverWithContext is the entry point to the neo4j driver to create an instance of a Driver. It is the first function to
@@ -193,19 +194,13 @@ func NewDriverWithContext(target string, auth AuthToken, configurers ...func(*Co
 		return nil, err
 	}
 
-	// Continue to setup connector
-	d.connector.DialTimeout = d.config.SocketConnectTimeout
-	d.connector.SocketKeepAlive = d.config.SocketKeepalive
-	d.connector.UserAgent = d.config.UserAgent
-	//lint:ignore SA1019 RootCAs is still supported until 6.0
-	d.connector.RootCAs = d.config.RootCAs
-	d.connector.TlsConfig = d.config.TlsConfig
 	d.connector.Log = d.log
 	d.connector.Auth = auth.tokens
 	d.connector.RoutingContext = routingContext
+	d.connector.Config = d.config
 
 	// Let the pool use the same log ID as the driver to simplify log reading.
-	d.pool = pool.New(d.config.MaxConnectionPoolSize, d.config.MaxConnectionLifetime, d.connector.Connect, d.log, d.logId)
+	d.pool = pool.New(d.config, d.connector.Connect, d.log, d.logId)
 
 	if !routing {
 		d.router = &directRouter{address: address}
@@ -357,7 +352,7 @@ func (d *driverWithContext) Close(ctx context.Context) error {
 // ExecuteQuery runs the specified query with its parameters and returns the query result, transformed by the specified
 // ResultTransformer function.
 //
-// This API is currently experimental and may change or be removed at any time.
+// This is currently a preview feature (see README on what it means in terms of support and compatibility guarantees)
 //
 //	result, err := ExecuteQuery[*EagerResult](ctx, driver, query, params, EagerResultTransformer)
 //
@@ -452,10 +447,14 @@ func ExecuteQuery[T any](
 	newResultTransformer func() ResultTransformer[T],
 	settings ...ExecuteQueryConfigurationOption) (res T, err error) {
 
+	if driver == nil {
+		return *new(T), &UsageError{Message: "nil is not a valid DriverWithContext argument."}
+	}
+
 	if newResultTransformer == nil {
-		return *new(T), errors.New("nil is not a valid ResultTransformer function argument. " +
+		return *new(T), &UsageError{Message: "nil is not a valid ResultTransformer function argument. " +
 			"Consider passing EagerResultTransformer or a function that returns an instance of your own " +
-			"ResultTransformer implementation")
+			"ResultTransformer implementation"}
 	}
 
 	bookmarkManager := driver.DefaultExecuteQueryBookmarkManager()
@@ -498,16 +497,17 @@ func executeQueryCallback[T any](
 	return func(tx ManagedTransaction) (any, error) {
 		transformer := newTransformer()
 		if transformer == nil {
-			return nil, errors.New(
-				"expected the result transformer function to return a valid ResultTransformer instance, " +
-					"but got nil")
+			return nil, &UsageError{Message: "expected the result transformer function to return a valid " +
+				"ResultTransformer instance, but got nil"}
 		}
 		cursor, err := tx.Run(ctx, query, parameters)
 		if err != nil {
 			return nil, err
 		}
 		for cursor.Next(ctx) {
-			transformer.Accept(cursor.Record())
+			if err := transformer.Accept(cursor.Record()); err != nil {
+				return nil, err
+			}
 		}
 		if err = cursor.Err(); err != nil {
 			return nil, err
@@ -520,7 +520,7 @@ func executeQueryCallback[T any](
 		if err != nil {
 			return nil, err
 		}
-		return transformer.Complete(keys, summary), nil
+		return transformer.Complete(keys, summary)
 	}
 }
 
@@ -532,26 +532,29 @@ type eagerResultTransformer struct {
 	records []*Record
 }
 
-func (e *eagerResultTransformer) Accept(record *Record) {
+func (e *eagerResultTransformer) Accept(record *Record) error {
 	e.records = append(e.records, record)
+	return nil
 }
 
-func (e *eagerResultTransformer) Complete(keys []string, summary ResultSummary) *EagerResult {
+func (e *eagerResultTransformer) Complete(keys []string, summary ResultSummary) (*EagerResult, error) {
 	return &EagerResult{
 		Keys:    keys,
 		Records: e.records,
 		Summary: summary,
-	}
+	}, nil
 }
 
 // ExecuteQueryConfigurationOption is a callback that configures the execution of DriverWithContext.ExecuteQuery
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryConfigurationOption is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 type ExecuteQueryConfigurationOption func(*ExecuteQueryConfiguration)
 
 // ExecuteQueryWithReadersRouting configures DriverWithContext.ExecuteQuery to route to reader members of the cluster
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryWithReadersRouting is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 func ExecuteQueryWithReadersRouting() ExecuteQueryConfigurationOption {
 	return func(configuration *ExecuteQueryConfiguration) {
 		configuration.Routing = Readers
@@ -560,7 +563,8 @@ func ExecuteQueryWithReadersRouting() ExecuteQueryConfigurationOption {
 
 // ExecuteQueryWithWritersRouting configures DriverWithContext.ExecuteQuery to route to writer members of the cluster
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryWithWritersRouting is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 func ExecuteQueryWithWritersRouting() ExecuteQueryConfigurationOption {
 	return func(configuration *ExecuteQueryConfiguration) {
 		configuration.Routing = Writers
@@ -569,7 +573,8 @@ func ExecuteQueryWithWritersRouting() ExecuteQueryConfigurationOption {
 
 // ExecuteQueryWithImpersonatedUser configures DriverWithContext.ExecuteQuery to impersonate the specified user
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryWithImpersonatedUser is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 func ExecuteQueryWithImpersonatedUser(user string) ExecuteQueryConfigurationOption {
 	return func(configuration *ExecuteQueryConfiguration) {
 		configuration.ImpersonatedUser = user
@@ -578,7 +583,8 @@ func ExecuteQueryWithImpersonatedUser(user string) ExecuteQueryConfigurationOpti
 
 // ExecuteQueryWithDatabase configures DriverWithContext.ExecuteQuery to target the specified database
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryWithDatabase is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 func ExecuteQueryWithDatabase(db string) ExecuteQueryConfigurationOption {
 	return func(configuration *ExecuteQueryConfiguration) {
 		configuration.Database = db
@@ -587,7 +593,8 @@ func ExecuteQueryWithDatabase(db string) ExecuteQueryConfigurationOption {
 
 // ExecuteQueryWithBookmarkManager configures DriverWithContext.ExecuteQuery to rely on the specified BookmarkManager
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryWithBookmarkManager is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 func ExecuteQueryWithBookmarkManager(bookmarkManager BookmarkManager) ExecuteQueryConfigurationOption {
 	return func(configuration *ExecuteQueryConfiguration) {
 		configuration.BookmarkManager = bookmarkManager
@@ -596,36 +603,52 @@ func ExecuteQueryWithBookmarkManager(bookmarkManager BookmarkManager) ExecuteQue
 
 // ExecuteQueryWithoutBookmarkManager configures DriverWithContext.ExecuteQuery to not rely on any BookmarkManager
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryWithoutBookmarkManager is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 func ExecuteQueryWithoutBookmarkManager() ExecuteQueryConfigurationOption {
 	return func(configuration *ExecuteQueryConfiguration) {
 		configuration.BookmarkManager = nil
 	}
 }
 
+// ExecuteQueryWithBoltLogger configures DriverWithContext.ExecuteQuery to log Bolt messages with the provided BoltLogger
+//
+// ExecuteQueryWithBoltLogger is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
+func ExecuteQueryWithBoltLogger(boltLogger log.BoltLogger) ExecuteQueryConfigurationOption {
+	return func(configuration *ExecuteQueryConfiguration) {
+		configuration.BoltLogger = boltLogger
+	}
+}
+
 // ExecuteQueryConfiguration holds all the possible configuration settings for DriverWithContext.ExecuteQuery
 //
-// This API is currently experimental and may change or be removed at any time.
+// ExecuteQueryConfiguration is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 type ExecuteQueryConfiguration struct {
 	Routing          RoutingControl
 	ImpersonatedUser string
 	Database         string
 	BookmarkManager  BookmarkManager
+	BoltLogger       log.BoltLogger
 }
 
 // RoutingControl specifies how the query executed by DriverWithContext.ExecuteQuery is to be routed
 //
-// This API is currently experimental and may change or be removed at any time.
+// RoutingControl is part of the ExecuteQuery preview feature (see README on what it means in terms of support and
+// compatibility guarantees)
 type RoutingControl int
 
 const (
 	// Writers routes the query to execute to a writer member of the cluster
 	//
-	// This API is currently experimental and may change or be removed at any time.
+	// Writers is part of the ExecuteQuery preview feature (see README on what it means in terms of
+	// support and compatibility guarantees)
 	Writers RoutingControl = iota
 	// Readers routes the query to execute to a writer member of the cluster
 	//
-	// This API is currently experimental and may change or be removed at any time.
+	// Readers is part of the ExecuteQuery preview feature (see README on what it means in terms of
+	// support and compatibility guarantees)
 	Readers
 )
 
@@ -634,6 +657,7 @@ func (c *ExecuteQueryConfiguration) toSessionConfig() SessionConfig {
 		ImpersonatedUser: c.ImpersonatedUser,
 		DatabaseName:     c.Database,
 		BookmarkManager:  c.BookmarkManager,
+		BoltLogger:       c.BoltLogger,
 	}
 }
 
@@ -652,7 +676,8 @@ func (c *ExecuteQueryConfiguration) selectTxFunctionApi(session SessionWithConte
 
 // EagerResult holds the result and result metadata of the query executed via DriverWithContext.ExecuteQuery
 //
-// This API is currently experimental and may change or be removed at any time.
+// EagerResult is part of the ExecuteQuery preview feature (see README on what it means in terms of
+// support and compatibility guarantees)
 type EagerResult struct {
 	Keys    []string
 	Records []*Record

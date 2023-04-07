@@ -21,7 +21,7 @@ package neo4j
 
 import (
 	"context"
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/collection"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/collections"
 	"sync"
 )
 
@@ -32,7 +32,7 @@ import (
 type Bookmarks = []string
 
 // BookmarkManager centralizes bookmark manager supply and notification
-// This API is experimental and may be changed or removed without prior notice
+// This is currently a preview feature (see README on what it means in terms of support and compatibility guarantees)
 type BookmarkManager interface {
 	// UpdateBookmarks updates the bookmark tracked by this bookmark manager
 	// previousBookmarks are the initial bookmarks of the bookmark holder (like a Session)
@@ -44,8 +44,8 @@ type BookmarkManager interface {
 	GetBookmarks(ctx context.Context) (Bookmarks, error)
 }
 
-// BookmarkManagerConfig is an experimental API and may be changed or removed
-// without prior notice
+// BookmarkManagerConfig is part of the BookmarkManager preview feature (see README on what it means in terms of support
+// and compatibility guarantees)
 type BookmarkManagerConfig struct {
 	// Initial bookmarks per database
 	InitialBookmarks Bookmarks
@@ -60,7 +60,7 @@ type BookmarkManagerConfig struct {
 }
 
 type bookmarkManager struct {
-	bookmarks        collection.Set[string]
+	bookmarks        collections.Set[string]
 	supplyBookmarks  func(context.Context) (Bookmarks, error)
 	consumeBookmarks func(context.Context, Bookmarks) error
 	mutex            sync.RWMutex
@@ -106,7 +106,7 @@ func (b *bookmarkManager) GetBookmarks(ctx context.Context) (Bookmarks, error) {
 
 func NewBookmarkManager(config BookmarkManagerConfig) BookmarkManager {
 	return &bookmarkManager{
-		bookmarks:        collection.NewSet(config.InitialBookmarks),
+		bookmarks:        collections.NewSet(config.InitialBookmarks),
 		supplyBookmarks:  config.BookmarkSupplier,
 		consumeBookmarks: config.BookmarkConsumer,
 	}

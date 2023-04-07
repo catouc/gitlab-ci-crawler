@@ -78,7 +78,6 @@ type bolt3 struct {
 	connId        string
 	logId         string
 	serverVersion string
-	tfirst        int64  // Time that server started streaming
 	bookmark      string // Last bookmark
 	birthDate     time.Time
 	log           log.Logger
@@ -174,10 +173,19 @@ func (b *bolt3) receiveSuccess(ctx context.Context) *success {
 	}
 }
 
-func (b *bolt3) Connect(ctx context.Context, minor int, auth map[string]any, userAgent string, _ map[string]string) error {
+func (b *bolt3) Connect(
+	ctx context.Context,
+	minor int,
+	auth map[string]any,
+	userAgent string,
+	_ map[string]string,
+	notificationConfig idb.NotificationConfig,
+) error {
 	if err := b.assertState(bolt3_unauthorized); err != nil {
 		return err
 	}
+
+	b.minor = minor
 
 	hello := map[string]any{
 		"user_agent": userAgent,
@@ -189,6 +197,10 @@ func (b *bolt3) Connect(ctx context.Context, minor int, auth map[string]any, use
 			continue
 		}
 		hello[k] = v
+	}
+
+	if err := checkNotificationFiltering(notificationConfig, b); err != nil {
+		return err
 	}
 
 	// Send hello message and wait for confirmation
@@ -211,13 +223,14 @@ func (b *bolt3) Connect(ctx context.Context, minor int, auth map[string]any, use
 
 	// Transition into ready state
 	b.state = bolt3_ready
-	b.minor = minor
 	b.log.Infof(log.Bolt3, b.logId, "Connected")
 	return nil
 }
 
-func (b *bolt3) TxBegin(ctx context.Context, txConfig idb.TxConfig) (idb.
-	TxHandle, error) {
+func (b *bolt3) TxBegin(
+	ctx context.Context,
+	txConfig idb.TxConfig,
+) (idb.TxHandle, error) {
 	// Ok, to begin transaction while streaming auto-commit, just empty the stream and continue.
 	if b.state == bolt3_streaming {
 		if err := b.bufferStream(ctx); err != nil {
@@ -229,6 +242,9 @@ func (b *bolt3) TxBegin(ctx context.Context, txConfig idb.TxConfig) (idb.
 		return 0, err
 	}
 	if err := b.checkImpersonation(txConfig.ImpersonatedUser); err != nil {
+		return 0, err
+	}
+	if err := checkNotificationFiltering(txConfig.NotificationConfig, b); err != nil {
 		return 0, err
 	}
 
@@ -429,24 +445,29 @@ func (b *bolt3) run(ctx context.Context, cypher string, params map[string]any, t
 	if b.err != nil {
 		return nil, b.err
 	}
-	b.tfirst = succ.tfirst
+
+	b.currStream = &stream{keys: succ.fields, tfirst: succ.tfirst}
 	// Change state to streaming
 	if b.state == bolt3_ready {
 		b.state = bolt3_streaming
 	} else {
 		b.state = bolt3_streamingtx
 	}
-
-	b.currStream = &stream{keys: succ.fields}
 	return b.currStream, nil
 }
 
-func (b *bolt3) Run(ctx context.Context, runCommand idb.Command,
-	txConfig idb.TxConfig) (idb.StreamHandle, error) {
+func (b *bolt3) Run(
+	ctx context.Context,
+	runCommand idb.Command,
+	txConfig idb.TxConfig,
+) (idb.StreamHandle, error) {
 	if err := b.assertState(bolt3_streaming, bolt3_ready); err != nil {
 		return nil, err
 	}
 	if err := b.checkImpersonation(txConfig.ImpersonatedUser); err != nil {
+		return nil, err
+	}
+	if err := checkNotificationFiltering(txConfig.NotificationConfig, b); err != nil {
 		return nil, err
 	}
 
@@ -586,14 +607,14 @@ func (b *bolt3) receiveNext(ctx context.Context) (*db.Record, *db.Summary, error
 				b.bookmark = sum.Bookmark
 			}
 		}
-		b.currStream.sum = sum
-		b.currStream = nil
 		// Add some extras to the summary
 		sum.Agent = b.serverVersion
 		sum.Major = 3
 		sum.Minor = b.minor
 		sum.ServerName = b.serverName
-		sum.TFirst = b.tfirst
+		sum.TFirst = b.currStream.tfirst
+		b.currStream.sum = sum
+		b.currStream = nil
 		return nil, sum, nil
 	case *db.Neo4jError:
 		b.err = x
