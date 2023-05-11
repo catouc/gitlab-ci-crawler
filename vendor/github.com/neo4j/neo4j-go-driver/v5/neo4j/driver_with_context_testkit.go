@@ -1,3 +1,5 @@
+//go:build internal_testkit
+
 /*
  * Copyright (c) "Neo4j"
  * Neo4j Sweden AB [https://neo4j.com]
@@ -17,32 +19,16 @@
  *  limitations under the License.
  */
 
-package pool
+package neo4j
 
-import (
-	"fmt"
-)
+import "time"
 
-type PoolTimeout struct {
-	err     error
-	servers []string
+func SetTimer(d DriverWithContext, timer func() time.Time) {
+	driver := d.(*driverWithContext)
+	driver.now = timer
 }
 
-func (e *PoolTimeout) Error() string {
-	return fmt.Sprintf("Timeout while waiting for connection to any of [%s]: %s", e.servers, e.err)
-}
-
-type PoolFull struct {
-	servers []string
-}
-
-func (e *PoolFull) Error() string {
-	return fmt.Sprintf("No idle connections on any of [%s]", e.servers)
-}
-
-type PoolClosed struct {
-}
-
-func (e *PoolClosed) Error() string {
-	return "Pool closed"
+func ResetTime(d DriverWithContext) {
+	driver := d.(*driverWithContext)
+	driver.now = time.Now
 }

@@ -20,9 +20,14 @@
 package bolt
 
 import (
+	"context"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/db"
+	idb "github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/errorutil"
 	"net"
 )
+
+type Neo4jErrorCallback func(context.Context, idb.Connection, *db.Neo4jError) error
 
 func handleTerminatedContextError(err error, connection net.Conn) error {
 	if !contextTerminatedErr(err) {
@@ -37,13 +42,13 @@ func handleTerminatedContextError(err error, connection net.Conn) error {
 
 func contextTerminatedErr(err error) bool {
 	switch err.(type) {
-	case *ConnectionWriteTimeout:
+	case *errorutil.ConnectionWriteTimeout:
 		return true
-	case *ConnectionReadTimeout:
+	case *errorutil.ConnectionReadTimeout:
 		return true
-	case *ConnectionWriteCanceled:
+	case *errorutil.ConnectionWriteCanceled:
 		return true
-	case *ConnectionReadCanceled:
+	case *errorutil.ConnectionReadCanceled:
 		return true
 	}
 	return false

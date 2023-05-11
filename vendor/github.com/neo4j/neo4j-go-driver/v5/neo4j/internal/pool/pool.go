@@ -8,13 +8,13 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *     https://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 // Package pool handles the database connection pool.
@@ -27,11 +27,15 @@ import (
 	"context"
 	"fmt"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/config"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/db"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/auth"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/bolt"
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
+	idb "github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/errorutil"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/racing"
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/log"
@@ -41,12 +45,10 @@ import (
 // Liveness checks are performed before a connection is deemed idle enough to be reset
 const DefaultLivenessCheckThreshold = math.MaxInt64
 
-type Connect func(context.Context, string, log.BoltLogger) (db.Connection, error)
+type Connect func(context.Context, string, *idb.ReAuthToken, bolt.Neo4jErrorCallback, log.BoltLogger) (idb.Connection, error)
 
 type qitem struct {
-	servers []string
-	wakeup  chan bool
-	conn    db.Connection
+	wakeup chan bool
 }
 
 type Pool struct {
@@ -56,7 +58,7 @@ type Pool struct {
 	serversMut racing.Mutex
 	queueMut   racing.Mutex
 	queue      list.List
-	now        func() time.Time
+	now        *func() time.Time
 	closed     bool
 	log        log.Logger
 	logId      string
@@ -67,7 +69,7 @@ type serverPenalty struct {
 	penalty uint32
 }
 
-func New(config *config.Config, connect Connect, logger log.Logger, logId string) *Pool {
+func New(config *config.Config, connect Connect, logger log.Logger, logId string, now *func() time.Time) *Pool {
 	// Means infinite life, simplifies checking later on
 
 	p := &Pool{
@@ -76,7 +78,7 @@ func New(config *config.Config, connect Connect, logger log.Logger, logId string
 		servers:    make(map[string]*server),
 		serversMut: racing.NewMutex(),
 		queueMut:   racing.NewMutex(),
-		now:        time.Now,
+		now:        now,
 		logId:      logId,
 		log:        logger,
 	}
@@ -103,22 +105,6 @@ func (p *Pool) Close(ctx context.Context) error {
 	p.serversMut.Unlock()
 	p.log.Infof(log.Pool, p.logId, "Closed")
 	return nil
-}
-
-func (p *Pool) anyExistingConnectionsOnServers(ctx context.Context, serverNames []string) (bool, error) {
-	if !p.serversMut.TryLock(ctx) {
-		return false, fmt.Errorf("could not acquire server lock in time when checking server connection")
-	}
-	defer p.serversMut.Unlock()
-	for _, s := range serverNames {
-		b := p.servers[s]
-		if b != nil {
-			if b.size() > 0 {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
 }
 
 // For testing
@@ -152,7 +138,7 @@ func (p *Pool) CleanUp(ctx context.Context) error {
 		return fmt.Errorf("could not acquire server lock in time when cleaning up pool")
 	}
 	defer p.serversMut.Unlock()
-	now := p.now()
+	now := (*p.now)()
 	for n, s := range p.servers {
 		s.removeIdleOlderThan(ctx, now, p.config.MaxConnectionLifetime)
 		if s.size() == 0 && !s.hasFailedConnect(now) {
@@ -160,6 +146,10 @@ func (p *Pool) CleanUp(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (p *Pool) Now() time.Time {
+	return (*p.now)()
 }
 
 func (p *Pool) getPenaltiesForServers(ctx context.Context, serverNames []string) ([]serverPenalty, error) {
@@ -170,7 +160,7 @@ func (p *Pool) getPenaltiesForServers(ctx context.Context, serverNames []string)
 
 	// Retrieve penalty for each server
 	penalties := make([]serverPenalty, len(serverNames))
-	now := p.now()
+	now := (*p.now)()
 	for i, n := range serverNames {
 		s := p.servers[n]
 		penalties[i].name = n
@@ -185,155 +175,195 @@ func (p *Pool) getPenaltiesForServers(ctx context.Context, serverNames []string)
 	return penalties, nil
 }
 
-func (p *Pool) tryAnyIdle(ctx context.Context, serverNames []string, idlenessThreshold time.Duration) (db.Connection, error) {
+func (p *Pool) tryAnyIdle(ctx context.Context, serverNames []string, idlenessThreshold time.Duration, auth *idb.ReAuthToken, logger log.BoltLogger) (idb.Connection, error) {
 	if !p.serversMut.TryLock(ctx) {
 		return nil, racing.LockTimeoutError("could not acquire server lock in time when getting idle connection")
 	}
-	defer p.serversMut.Unlock()
+	var unlock = new(sync.Once)
+	defer unlock.Do(p.serversMut.Unlock)
+serverLoop:
 	for _, serverName := range serverNames {
-		srv := p.servers[serverName]
-		if srv != nil {
-			// Try to get an existing idle connection
-			conn, _ := srv.getIdle(ctx, idlenessThreshold)
-			if conn != nil {
-				return conn, nil
+		for {
+			srv := p.servers[serverName]
+			if srv != nil {
+				conn := srv.getIdle()
+				if conn == nil {
+					continue serverLoop
+				}
+				unlock.Do(p.serversMut.Unlock)
+				healthy, err := srv.healthCheck(ctx, conn, idlenessThreshold, auth, logger)
+				if healthy {
+					return conn, nil
+				}
+				if err := p.unreg(context.Background(), serverName, conn, p.Now()); err != nil {
+					panic("lock with Background context should never time out")
+				}
+				if err != nil {
+					p.log.Debugf(log.Pool, p.logId, "Health check failed for %s: %s", serverName, err)
+					return nil, err
+				}
+				if !p.serversMut.TryLock(ctx) {
+					return nil, racing.LockTimeoutError("could not acquire lock in time when borrowing a connection")
+				}
+				*unlock = sync.Once{}
 			}
 		}
 	}
 	return nil, nil
 }
 
-func (p *Pool) Borrow(ctx context.Context, serverNames []string, wait bool, boltLogger log.BoltLogger, idlenessThreshold time.Duration) (db.Connection, error) {
+func (p *Pool) Borrow(ctx context.Context, getServerNames func(context.Context) ([]string, error), wait bool, boltLogger log.BoltLogger, idlenessThreshold time.Duration, auth *idb.ReAuthToken) (idb.Connection, error) {
 	if p.closed {
-		return nil, &PoolClosed{}
+		return nil, &errorutil.PoolClosed{}
 	}
-	p.log.Debugf(log.Pool, p.logId, "Trying to borrow connection from %s", serverNames)
 
-	// Retrieve penalty for each server
-	penalties, err := p.getPenaltiesForServers(ctx, serverNames)
-	if err != nil {
-		return nil, err
-	}
-	// Sort server penalties by lowest penalty
-	sort.Slice(penalties, func(i, j int) bool {
-		return penalties[i].penalty < penalties[j].penalty
-	})
+	for {
+		serverNames, err := getServerNames(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(serverNames) == 0 {
+			return nil, &errorutil.PoolOutOfServers{}
+		}
+		p.log.Debugf(log.Pool, p.logId, "Trying to borrow connection from %s", serverNames)
+		// Retrieve penalty for each server
+		penalties, err := p.getPenaltiesForServers(ctx, serverNames)
+		if err != nil {
+			return nil, err
+		}
+		// Sort server penalties by lowest penalty
+		sort.Slice(penalties, func(i, j int) bool {
+			return penalties[i].penalty < penalties[j].penalty
+		})
 
-	var conn db.Connection
-	for _, s := range penalties {
-		conn, err = p.tryBorrow(ctx, s.name, boltLogger, idlenessThreshold)
-		if err == nil {
+		var conn idb.Connection
+		for _, s := range penalties {
+			conn, err = p.tryBorrow(ctx, s.name, boltLogger, idlenessThreshold, auth)
+			if conn != nil {
+				return conn, nil
+			}
+
+			if errorutil.IsTimeoutError(err) {
+				p.log.Warnf(log.Pool, p.logId, "Borrow time-out")
+				return nil, &errorutil.PoolTimeout{Servers: serverNames, Err: err}
+			}
+			if errorutil.IsFatalDuringDiscovery(err) {
+				return nil, err
+			}
+		}
+
+		if err != nil {
+			// Intentionally return last error from last connection attempt to make it easier to
+			// see connection errors for users.
+			return nil, err
+		}
+
+		if !wait {
+			return nil, &errorutil.PoolFull{Servers: serverNames}
+		}
+
+		// Wait for a matching connection to be returned from another thread.
+		if !p.queueMut.TryLock(ctx) {
+			return nil, racing.LockTimeoutError("could not acquire lock in time when trying to get an idle connection")
+		}
+		// Ok, now that we own the queue we can add the item there but between getting the lock
+		// and above check for an existing connection another thread might have returned a connection
+		// so check again to avoid potentially starving this thread.
+		conn, err = p.tryAnyIdle(ctx, serverNames, idlenessThreshold, auth, boltLogger)
+		if err != nil {
+			p.queueMut.Unlock()
+			return nil, err
+		}
+		if conn != nil {
+			p.queueMut.Unlock()
 			return conn, nil
 		}
+		// Add a waiting request to the queue and unlock the queue to let other threads that return
+		// their connections access the queue.
+		q := &qitem{
+			wakeup: make(chan bool, 1),
+		}
+		e := p.queue.PushBack(q)
+		p.queueMut.Unlock()
 
-		if bolt.IsTimeoutError(err) {
+		p.log.Warnf(log.Pool, p.logId, "Borrow queued")
+		// Wait for either a wake-up signal that indicates that we got a connection or a timeout.
+		select {
+		case <-q.wakeup:
+			continue
+		case <-ctx.Done():
+			if !p.queueMut.TryLock(context.Background()) {
+				return nil, racing.LockTimeoutError("could not acquire lock in time when removing server wait request")
+			}
+			p.queue.Remove(e)
+			p.queueMut.Unlock()
 			p.log.Warnf(log.Pool, p.logId, "Borrow time-out")
-			return nil, &PoolTimeout{servers: serverNames, err: err}
+			return nil, &errorutil.PoolTimeout{Err: ctx.Err(), Servers: serverNames}
 		}
-	}
-
-	anyConnection, anyConnectionErr := p.anyExistingConnectionsOnServers(ctx, serverNames)
-	if anyConnectionErr != nil {
-		return nil, err
-	}
-	// If there are no connections for any of the servers, there is no point in waiting for anything
-	// to be returned.
-	if !anyConnection {
-		p.log.Warnf(log.Pool, p.logId, "No server connection available to any of %v", serverNames)
-		if err == nil {
-			err = fmt.Errorf("no server connection available to any of %v", serverNames)
-		}
-		// Intentionally return last error from last connection attempt to make it easier to
-		// see connection errors for users.
-		return nil, err
-	}
-
-	if !wait {
-		return nil, &PoolFull{servers: serverNames}
-	}
-
-	// Wait for a matching connection to be returned from another thread.
-	if !p.queueMut.TryLock(ctx) {
-		return nil, racing.LockTimeoutError("could not acquire lock in time when trying to get an idle connection")
-	}
-	// Ok, now that we own the queue we can add the item there but between getting the lock
-	// and above check for an existing connection another thread might have returned a connection
-	// so check again to avoid potentially starving this thread.
-	conn, err = p.tryAnyIdle(ctx, serverNames, idlenessThreshold)
-	if err != nil {
-		p.queueMut.Unlock()
-		return nil, err
-	}
-	if conn != nil {
-		p.queueMut.Unlock()
-		return conn, nil
-	}
-	// Add a waiting request to the queue and unlock the queue to let other threads that return
-	// their connections access the queue.
-	q := &qitem{
-		servers: serverNames,
-		wakeup:  make(chan bool),
-	}
-	e := p.queue.PushBack(q)
-	p.queueMut.Unlock()
-
-	p.log.Warnf(log.Pool, p.logId, "Borrow queued")
-	// Wait for either a wake-up signal that indicates that we got a connection or a timeout.
-	select {
-	case <-q.wakeup:
-		return q.conn, nil
-	case <-ctx.Done():
-		// TODO: provided ctx has reached deadline already - set some hardcoded timeout instead?
-		if !p.queueMut.TryLock(context.Background()) {
-			return nil, racing.LockTimeoutError("could not acquire lock in time when removing server wait request")
-		}
-		p.queue.Remove(e)
-		p.queueMut.Unlock()
-		if q.conn != nil {
-			return q.conn, nil
-		}
-		p.log.Warnf(log.Pool, p.logId, "Borrow time-out")
-		return nil, &PoolTimeout{err: ctx.Err(), servers: serverNames}
 	}
 }
 
-func (p *Pool) tryBorrow(ctx context.Context, serverName string, boltLogger log.BoltLogger, idlenessThreshold time.Duration) (db.Connection, error) {
+func (p *Pool) tryBorrow(ctx context.Context, serverName string, boltLogger log.BoltLogger, idlenessThreshold time.Duration, auth *idb.ReAuthToken) (idb.Connection, error) {
 	// For now, lock complete servers map to avoid over connecting but with the downside
 	// that long connect times will block connects to other servers as well. To fix this
 	// we would need to add a pending connect to the server and lock per server.
 	if !p.serversMut.TryLock(ctx) {
 		return nil, racing.LockTimeoutError("could not acquire lock in time when borrowing a connection")
 	}
-	defer p.serversMut.Unlock()
+	var unlock = new(sync.Once)
+	defer unlock.Do(p.serversMut.Unlock)
 
 	srv := p.servers[serverName]
-	if srv != nil {
-		for {
-			connection, found := srv.getIdle(ctx, idlenessThreshold)
-			if connection == nil && found {
-				continue
+	for {
+		if srv != nil {
+			connection := srv.getIdle()
+			if connection == nil {
+				if srv.size() >= p.config.MaxConnectionPoolSize {
+					return nil, nil
+				}
+				break
 			}
-			if connection != nil {
-				connection.SetBoltLogger(boltLogger)
+			unlock.Do(p.serversMut.Unlock)
+			healthy, err := srv.healthCheck(ctx, connection, idlenessThreshold, auth, boltLogger)
+			if healthy {
 				return connection, nil
 			}
-			if srv.size() >= p.config.MaxConnectionPoolSize {
-				return nil, &PoolFull{servers: []string{serverName}}
+			if err := p.unreg(context.Background(), serverName, connection, p.Now()); err != nil {
+				panic("lock with Background context should never time out")
 			}
+			if err != nil {
+				p.log.Debugf(log.Pool, p.logId, "Health check failed for %s: %s", serverName, err)
+				return nil, err
+			}
+			if !p.serversMut.TryLock(ctx) {
+				return nil, racing.LockTimeoutError("could not acquire lock in time when borrowing a connection")
+			}
+			*unlock = sync.Once{}
+			srv = p.servers[serverName]
+		} else {
+			// Make sure that there is a server in the map
+			srv = NewServer()
+			p.servers[serverName] = srv
 			break
 		}
-	} else {
-		// Make sure that there is a server in the map
-		srv = NewServer()
-		p.servers[serverName] = srv
 	}
+
+	srv.reservations++
+	unlock.Do(p.serversMut.Unlock)
 
 	// No idle connection, try to connect
 	p.log.Infof(log.Pool, p.logId, "Connecting to %s", serverName)
-	c, err := p.connect(ctx, serverName, boltLogger)
+	c, err := p.connect(ctx, serverName, auth, p.OnConnectionError, boltLogger)
+	if !p.serversMut.TryLock(context.Background()) {
+		panic("lock with Background context should never time out")
+	}
+	*unlock = sync.Once{}
+	srv.reservations--
 	if err != nil {
-		// Failed to connect, keep track that it was bad for a while
-		srv.notifyFailedConnect(p.now())
+		// FeatureNotSupportedError is not the server fault, don't penalize it
+		if _, ok := err.(*db.FeatureNotSupportedError); !ok {
+			srv.notifyFailedConnect((*p.now)())
+		}
 		p.log.Warnf(log.Pool, p.logId, "Failed to connect to %s: %s", serverName, err)
 		return nil, err
 	}
@@ -344,12 +374,16 @@ func (p *Pool) tryBorrow(ctx context.Context, serverName string, boltLogger log.
 	return c, nil
 }
 
-func (p *Pool) unreg(ctx context.Context, serverName string, c db.Connection, now time.Time) error {
+func (p *Pool) unreg(ctx context.Context, serverName string, c idb.Connection, now time.Time) error {
 	if !p.serversMut.TryLock(ctx) {
 		return racing.LockTimeoutError("could not acquire server lock in time when unregistering server")
 	}
 	defer p.serversMut.Unlock()
 
+	return p.unregUnlocked(ctx, serverName, c, now)
+}
+
+func (p *Pool) unregUnlocked(ctx context.Context, serverName string, c idb.Connection, now time.Time) error {
 	defer func() {
 		// Close connection in another thread to avoid potential long blocking operation during close.
 		go c.Close(ctx)
@@ -382,7 +416,7 @@ func (p *Pool) removeIdleOlderThanOnServer(ctx context.Context, serverName strin
 	return nil
 }
 
-func (p *Pool) Return(ctx context.Context, c db.Connection) error {
+func (p *Pool) Return(ctx context.Context, c idb.Connection) error {
 	if p.closed {
 		p.log.Warnf(log.Pool, p.logId, "Trying to return connection to closed pool")
 		return nil
@@ -396,7 +430,7 @@ func (p *Pool) Return(ctx context.Context, c db.Connection) error {
 	// If the connection is dead, remove all other idle connections on the same server that older
 	// or of the same age as the dead connection, otherwise perform normal cleanup of old connections
 	maxAge := p.config.MaxConnectionLifetime
-	now := p.now()
+	now := (*p.now)()
 	age := now.Sub(c.Birthdate())
 	if !isAlive {
 		// Since this connection has died all other connections that connected before this one
@@ -425,10 +459,20 @@ func (p *Pool) Return(ctx context.Context, c db.Connection) error {
 			return err
 		}
 		p.log.Infof(log.Pool, p.logId, "Unregistering dead or too old connection to %s", serverName)
-		// Returning here could cause a waiting thread to wait until it times out, to do it
-		// properly we could wake up threads that waits on the server and wake them up if there
-		// are no more connections to wait for.
-		return nil
+	}
+
+	if isAlive {
+		// Just put it back in the list of idle connections for this server
+		if !p.serversMut.TryLock(ctx) {
+			return racing.LockTimeoutError("could not acquire server lock when putting connection back to idle")
+		}
+		server := p.servers[serverName]
+		if server != nil { // Strange when server not found
+			server.returnBusy(c)
+		} else {
+			p.log.Warnf(log.Pool, p.logId, "Server %s not found", serverName)
+		}
+		p.serversMut.Unlock()
 	}
 
 	// Check if there is anyone in the queue waiting for a connection to this server.
@@ -437,29 +481,39 @@ func (p *Pool) Return(ctx context.Context, c db.Connection) error {
 	}
 	for e := p.queue.Front(); e != nil; e = e.Next() {
 		queuedRequest := e.Value.(*qitem)
-		// Check requested servers
-		for _, rserver := range queuedRequest.servers {
-			if rserver == serverName {
-				queuedRequest.conn = c
-				p.queue.Remove(e)
-				p.queueMut.Unlock()
-				queuedRequest.wakeup <- true
-				return nil
-			}
-		}
+		p.queue.Remove(e)
+		queuedRequest.wakeup <- true
 	}
 	p.queueMut.Unlock()
 
-	// Just put it back in the list of idle connections for this server
-	if !p.serversMut.TryLock(ctx) {
-		return racing.LockTimeoutError("could not acquire server lock when putting connection back to idle")
-	}
-	defer p.serversMut.Unlock()
-	server := p.servers[serverName]
-	if server != nil { // Strange when server not found
-		server.returnBusy(c)
-	} else {
-		p.log.Warnf(log.Pool, p.logId, "Server %s not found", serverName)
+	return nil
+}
+
+func (p *Pool) OnConnectionError(ctx context.Context, connection idb.Connection, error *db.Neo4jError) error {
+	if error.Code == "Neo.ClientError.Security.AuthorizationExpired" {
+		serverName := connection.ServerName()
+		if !p.serversMut.TryLock(ctx) {
+			return racing.LockTimeoutError(fmt.Sprintf(
+				"could not acquire server lock in time before marking all connection to %s for re-authentication",
+				serverName))
+		}
+		defer p.serversMut.Unlock()
+		server := p.servers[serverName]
+		server.executeForAllConnections(func(c idb.Connection) {
+			c.ResetAuth()
+		})
+	} else if error.Code == "Neo.ClientError.Security.TokenExpired" {
+		manager, token := connection.GetCurrentAuth()
+		if manager != nil {
+			if err := manager.OnTokenExpired(ctx, token); err != nil {
+				return err
+			}
+			if _, isStaticToken := manager.(auth.Token); isStaticToken {
+				return nil
+			} else {
+				error.MarkRetriable()
+			}
+		}
 	}
 	return nil
 }

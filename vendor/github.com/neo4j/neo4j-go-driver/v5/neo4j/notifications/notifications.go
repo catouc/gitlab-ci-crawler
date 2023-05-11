@@ -8,13 +8,13 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *     https://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package notifications
@@ -36,7 +36,7 @@ type NotificationDisabledCategories struct {
 }
 
 // DisableCategories creates a NotificationDisabledCategories that disables the given categories.
-// Can be used for NotificationsDisabledCategories of neo4j.Config and neo4j.SessionConfig.
+// Can be used for NotificationsDisabledCategories of config.Config and config.SessionConfig.
 func DisableCategories(value ...NotificationCategory) NotificationDisabledCategories {
 	return NotificationDisabledCategories{value, false}
 }
@@ -58,7 +58,7 @@ func (n *NotificationDisabledCategories) DisabledCategories() []NotificationCate
 }
 
 // NotificationMinimumSeverityLevel defines the minimum severity level of notifications the server should send.
-// Can be used for NotificationsMinSeverity of neo4j.Config and neo4j.SessionConfig.
+// Can be used for NotificationsMinSeverity of config.Config and config.SessionConfig.
 type NotificationMinimumSeverityLevel string
 
 const (

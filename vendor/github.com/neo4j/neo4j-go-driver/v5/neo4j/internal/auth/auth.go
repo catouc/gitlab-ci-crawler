@@ -17,6 +17,16 @@
  * limitations under the License.
  */
 
-package neo4j
+package auth
 
-const UserAgent = "Go Driver/5.8.1"
+import "context"
+
+type Token struct {
+	Tokens map[string]any
+}
+
+func (a Token) GetAuthToken(context.Context) (Token, error) {
+	return a, nil
+}
+
+func (a Token) OnTokenExpired(context.Context, Token) error { return nil }
