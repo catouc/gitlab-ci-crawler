@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.2
 	github.com/neo4j/neo4j-go-driver/v5 v5.7.0
 	github.com/rs/zerolog v1.29.1
-	github.com/stretchr/testify v1.8.2
+	github.com/stretchr/testify v1.8.3
 	golang.org/x/time v0.3.0
 	gopkg.in/yaml.v3 v3.0.1
 )
