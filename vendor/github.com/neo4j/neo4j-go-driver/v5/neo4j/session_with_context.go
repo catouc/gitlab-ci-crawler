@@ -8,13 +8,13 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *     https://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package neo4j
@@ -74,11 +74,12 @@ type SessionWithContext interface {
 
 	legacy() Session
 	getServerInfo(ctx context.Context) (ServerInfo, error)
+	verifyAuthentication(ctx context.Context) error
 }
 
 // SessionConfig is used to configure a new session, its zero value uses safe defaults.
 type SessionConfig struct {
-	// AccessMode used when using Session.Run and explicit transactions. Used to route query to
+	// AccessMode used when using Session.Run and explicit transactions. Used to route query
 	// to read or write servers when running in a cluster. Session.ReadTransaction and Session.WriteTransaction
 	// does not rely on this mode.
 	AccessMode AccessMode
@@ -150,8 +151,6 @@ type SessionConfig struct {
 	ImpersonatedUser string
 	// BookmarkManager defines a central point to externally supply bookmarks
 	// and be notified of bookmark updates per database
-	// This is part of the BookmarkManager preview feature (see README on what it means in terms of
-	// support and compatibility guarantees)
 	// Since 5.0
 	// default: nil (no-op)
 	BookmarkManager BookmarkManager
@@ -163,6 +162,21 @@ type SessionConfig struct {
 	// By default, the driver's settings are used.
 	// Else, this option overrides the driver's settings.
 	NotificationsDisabledCategories notifications.NotificationDisabledCategories
+	// Auth is used to overwrite the authentication information for the session.
+	// This requires the server to support re-authentication on the protocol level.
+	// `nil` will make the driver use the authentication information from the driver configuration.
+	// The `neo4j` package provides factory functions for common authentication schemes:
+	//   - `neo4j.NoAuth`
+	//   - `neo4j.BasicAuth`
+	//   - `neo4j.KerberosAuth`
+	//   - `neo4j.BearerAuth`
+	//   - `neo4j.CustomAuth`
+	//
+	// Session auth is part of the re-authentication preview feature
+	// (see README on what it means in terms of support and compatibility guarantees).
+	Auth *AuthToken
+
+	forceReAuth bool
 }
 
 // FetchAll turns off fetching records in batches.
@@ -173,9 +187,10 @@ const FetchDefault = 0
 
 // Connection pool as seen by the session.
 type sessionPool interface {
-	Borrow(ctx context.Context, serverNames []string, wait bool, boltLogger log.BoltLogger, livenessCheckThreshold time.Duration) (idb.Connection, error)
+	Borrow(ctx context.Context, getServers func(context.Context) ([]string, error), wait bool, boltLogger log.BoltLogger, livenessCheckThreshold time.Duration, auth *idb.ReAuthToken) (idb.Connection, error)
 	Return(ctx context.Context, c idb.Connection) error
 	CleanUp(ctx context.Context) error
+	Now() time.Time
 }
 
 type sessionWithContext struct {
@@ -188,15 +203,24 @@ type sessionWithContext struct {
 	explicitTx    *explicitTransaction
 	autocommitTx  *autocommitTransaction
 	sleep         func(d time.Duration)
-	now           func() time.Time
+	now           *func() time.Time
 	logId         string
 	log           log.Logger
 	throttleTime  time.Duration
 	fetchSize     int
 	config        SessionConfig
+	auth          *idb.ReAuthToken
 }
 
-func newSessionWithContext(config *Config, sessConfig SessionConfig, router sessionRouter, pool sessionPool, logger log.Logger) *sessionWithContext {
+func newSessionWithContext(
+	config *Config,
+	sessConfig SessionConfig,
+	router sessionRouter,
+	pool sessionPool,
+	logger log.Logger,
+	token *idb.ReAuthToken,
+	now *func() time.Time,
+) *sessionWithContext {
 	logId := log.NewId()
 	logger.Debugf(log.Session, logId, "Created with context")
 
@@ -214,11 +238,12 @@ func newSessionWithContext(config *Config, sessConfig SessionConfig, router sess
 		config:        sessConfig,
 		resolveHomeDb: sessConfig.DatabaseName == "",
 		sleep:         time.Sleep,
-		now:           time.Now,
+		now:           now,
 		log:           logger,
 		logId:         logId,
 		throttleTime:  time.Second * 1,
 		fetchSize:     fetchSize,
+		auth:          token,
 	}
 }
 
@@ -280,14 +305,14 @@ func (s *sessionWithContext) BeginTransaction(ctx context.Context, configurers .
 	// Get a connection from the pool. This could fail in clustered environment.
 	conn, err := s.getConnection(ctx, s.defaultMode, pool.DefaultLivenessCheckThreshold)
 	if err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 
 	// Begin transaction
 	beginBookmarks, err := s.getBookmarks(ctx)
 	if err != nil {
 		_ = s.pool.Return(ctx, conn)
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 	txHandle, err := conn.TxBegin(ctx,
 		idb.TxConfig{
@@ -303,7 +328,7 @@ func (s *sessionWithContext) BeginTransaction(ctx context.Context, configurers .
 		})
 	if err != nil {
 		_ = s.pool.Return(ctx, conn)
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 
 	// Create transaction wrapper
@@ -383,26 +408,13 @@ func (s *sessionWithContext) runRetriable(
 		},
 	}
 	for state.Continue() {
-		if tryAgain, result := s.executeTransactionFunction(ctx, mode, config, &state, work); tryAgain {
-			continue
-		} else {
+		if hasCompleted, result := s.executeTransactionFunction(ctx, mode, config, &state, work); hasCompleted {
 			return result, nil
 		}
 	}
 
-	// When retries has occurred wrap the error, the last error is always added but
-	// cause is only set when the retry logic could detect something strange.
-	if state.LastErrWasRetryable {
-		err := newTransactionExecutionLimit(state.Errs, state.Causes)
-		s.log.Error(log.Session, s.logId, err)
-		return nil, err
-	}
-	// Wrap and log the error if it belongs to the driver
-	err := wrapError(state.LastErr)
-	switch err.(type) {
-	case *UsageError, *ConnectivityError:
-		s.log.Error(log.Session, s.logId, err)
-	}
+	err := state.ProduceError()
+	s.log.Error(log.Session, s.logId, err)
 	return nil, err
 }
 
@@ -415,8 +427,8 @@ func (s *sessionWithContext) executeTransactionFunction(
 
 	conn, err := s.getConnection(ctx, mode, pool.DefaultLivenessCheckThreshold)
 	if err != nil {
-		state.OnFailure(ctx, conn, err, false)
-		return true, nil
+		state.OnFailure(ctx, err, conn, false)
+		return false, nil
 	}
 
 	// handle transaction function panic as well
@@ -426,8 +438,8 @@ func (s *sessionWithContext) executeTransactionFunction(
 
 	beginBookmarks, err := s.getBookmarks(ctx)
 	if err != nil {
-		state.OnFailure(ctx, conn, err, false)
-		return true, nil
+		state.OnFailure(ctx, err, conn, false)
+		return false, nil
 	}
 	txHandle, err := conn.TxBegin(ctx,
 		idb.TxConfig{
@@ -442,8 +454,8 @@ func (s *sessionWithContext) executeTransactionFunction(
 			},
 		})
 	if err != nil {
-		state.OnFailure(ctx, conn, err, false)
-		return true, nil
+		state.OnFailure(ctx, err, conn, false)
+		return false, nil
 	}
 
 	tx := managedTransaction{conn: conn, fetchSize: s.fetchSize, txHandle: txHandle}
@@ -453,14 +465,14 @@ func (s *sessionWithContext) executeTransactionFunction(
 		// client wants to rollback. We don't do an explicit rollback here
 		// but instead rely on the pool invoking reset on the connection,
 		// that will do an implicit rollback.
-		state.OnFailure(ctx, conn, err, false)
-		return true, nil
+		state.OnFailure(ctx, err, conn, false)
+		return false, nil
 	}
 
 	err = conn.TxCommit(ctx, txHandle)
 	if err != nil {
-		state.OnFailure(ctx, conn, err, true)
-		return true, nil
+		state.OnFailure(ctx, err, conn, true)
+		return false, nil
 	}
 
 	// transaction has been committed so let's ignore (ie just log) the error
@@ -468,14 +480,24 @@ func (s *sessionWithContext) executeTransactionFunction(
 		s.log.Warnf(log.Session, s.logId, "could not retrieve bookmarks after successful commit: %s\n"+
 			"the results of this transaction may not be visible to subsequent operations", err.Error())
 	}
-	return false, x
+	return true, x
 }
 
-func (s *sessionWithContext) getServers(ctx context.Context, mode idb.AccessMode) ([]string, error) {
+func (s *sessionWithContext) getOrUpdateServers(ctx context.Context, mode idb.AccessMode) ([]string, error) {
 	if mode == idb.ReadMode {
-		return s.router.Readers(ctx, s.getBookmarks, s.config.DatabaseName, s.config.BoltLogger)
+		return s.router.GetOrUpdateReaders(ctx, s.getBookmarks, s.config.DatabaseName, s.auth, s.config.BoltLogger)
 	} else {
-		return s.router.Writers(ctx, s.getBookmarks, s.config.DatabaseName, s.config.BoltLogger)
+		return s.router.GetOrUpdateWriters(ctx, s.getBookmarks, s.config.DatabaseName, s.auth, s.config.BoltLogger)
+	}
+}
+
+func (s *sessionWithContext) getServers(mode idb.AccessMode) func(context.Context) ([]string, error) {
+	return func(ctx context.Context) ([]string, error) {
+		if mode == idb.ReadMode {
+			return s.router.Readers(ctx, s.config.DatabaseName)
+		} else {
+			return s.router.Writers(ctx, s.config.DatabaseName)
+		}
 	}
 }
 
@@ -495,16 +517,22 @@ func (s *sessionWithContext) getConnection(ctx context.Context, mode idb.AccessM
 	}
 
 	if err := s.resolveHomeDatabase(ctx); err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
-	servers, err := s.getServers(ctx, mode)
+	_, err := s.getOrUpdateServers(ctx, mode)
 	if err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 
-	conn, err := s.pool.Borrow(ctx, servers, s.driverConfig.ConnectionAcquisitionTimeout != 0, s.config.BoltLogger, livenessCheckThreshold)
+	conn, err := s.pool.Borrow(
+		ctx,
+		s.getServers(mode),
+		s.driverConfig.ConnectionAcquisitionTimeout != 0,
+		s.config.BoltLogger,
+		livenessCheckThreshold,
+		s.auth)
 	if err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 
 	// Select database on server
@@ -557,13 +585,13 @@ func (s *sessionWithContext) Run(ctx context.Context,
 
 	conn, err := s.getConnection(ctx, s.defaultMode, pool.DefaultLivenessCheckThreshold)
 	if err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 
 	runBookmarks, err := s.getBookmarks(ctx)
 	if err != nil {
 		_ = s.pool.Return(ctx, conn)
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 	stream, err := conn.Run(
 		ctx,
@@ -586,7 +614,7 @@ func (s *sessionWithContext) Run(ctx context.Context,
 	)
 	if err != nil {
 		_ = s.pool.Return(ctx, conn)
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 
 	s.autocommitTx = &autocommitTransaction{
@@ -634,15 +662,21 @@ func (s *sessionWithContext) legacy() Session {
 
 func (s *sessionWithContext) getServerInfo(ctx context.Context) (ServerInfo, error) {
 	if err := s.resolveHomeDatabase(ctx); err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
-	servers, err := s.getServers(ctx, idb.ReadMode)
+	_, err := s.getOrUpdateServers(ctx, idb.ReadMode)
 	if err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
-	conn, err := s.pool.Borrow(ctx, servers, s.driverConfig.ConnectionAcquisitionTimeout != 0, s.config.BoltLogger, 0)
+	conn, err := s.pool.Borrow(
+		ctx,
+		s.getServers(idb.ReadMode),
+		s.driverConfig.ConnectionAcquisitionTimeout != 0,
+		s.config.BoltLogger,
+		0,
+		s.auth)
 	if err != nil {
-		return nil, wrapError(err)
+		return nil, errorutil.WrapError(err)
 	}
 	defer s.pool.Return(ctx, conn)
 	return &simpleServerInfo{
@@ -650,6 +684,25 @@ func (s *sessionWithContext) getServerInfo(ctx context.Context) (ServerInfo, err
 		agent:           conn.ServerVersion(),
 		protocolVersion: conn.Version(),
 	}, nil
+}
+
+func (s *sessionWithContext) verifyAuthentication(ctx context.Context) error {
+	_, err := s.getOrUpdateServers(ctx, idb.ReadMode)
+	if err != nil {
+		return errorutil.WrapError(err)
+	}
+	conn, err := s.pool.Borrow(
+		ctx,
+		s.getServers(idb.ReadMode),
+		s.driverConfig.ConnectionAcquisitionTimeout != 0,
+		s.config.BoltLogger,
+		0,
+		s.auth)
+	if err != nil {
+		return errorutil.WrapError(err)
+	}
+	defer s.pool.Return(ctx, conn)
+	return nil
 }
 
 func (s *sessionWithContext) resolveHomeDatabase(ctx context.Context) error {
@@ -661,7 +714,12 @@ func (s *sessionWithContext) resolveHomeDatabase(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defaultDb, err := s.router.GetNameOfDefaultDatabase(ctx, bookmarks, s.config.ImpersonatedUser, s.config.BoltLogger)
+	defaultDb, err := s.router.GetNameOfDefaultDatabase(
+		ctx,
+		bookmarks,
+		s.config.ImpersonatedUser,
+		s.auth,
+		s.config.BoltLogger)
 	if err != nil {
 		return err
 	}
@@ -712,6 +770,10 @@ func (s *erroredSessionWithContext) legacy() Session {
 }
 func (s *erroredSessionWithContext) getServerInfo(context.Context) (ServerInfo, error) {
 	return nil, s.err
+}
+
+func (s *erroredSessionWithContext) verifyAuthentication(context.Context) error {
+	return s.err
 }
 
 func defaultTransactionConfig() TransactionConfig {

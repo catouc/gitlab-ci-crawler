@@ -17,6 +17,21 @@
  * limitations under the License.
  */
 
-package neo4j
+//go:build internal_testkit
 
-const UserAgent = "Go Driver/5.8.1"
+package auth
+
+import "time"
+
+func SetTimer(t TokenManager, timer func() time.Time) {
+	if t, ok := t.(*expirationBasedTokenManager); ok {
+		t.now = &timer
+	}
+}
+
+func ResetTime(t TokenManager) {
+	if t, ok := t.(*expirationBasedTokenManager); ok {
+		now := time.Now
+		t.now = &now
+	}
+}

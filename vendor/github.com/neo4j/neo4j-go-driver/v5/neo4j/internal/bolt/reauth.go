@@ -17,31 +17,26 @@
  *  limitations under the License.
  */
 
-package router
+package bolt
 
 import (
-	"fmt"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j/db"
+	idb "github.com/neo4j/neo4j-go-driver/v5/neo4j/db"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
 )
 
-type ReadRoutingTableError struct {
-	err    error
-	server string
-}
-
-func (e *ReadRoutingTableError) Error() string {
-	if e.err != nil || len(e.server) > 0 {
-		return fmt.Sprintf("Unable to retrieve routing table from %s: %s", e.server, e.err)
+func checkReAuth(auth *db.ReAuthToken, connection db.Connection) error {
+	fromSession := auth.FromSession
+	version := connection.Version()
+	if !fromSession {
+		return nil
 	}
-	return "Unable to retrieve routing table, no router provided"
-}
-
-func wrapError(server string, err error) error {
-	// Preserve error originating from the database, wrap other errors
-	_, isNeo4jErr := err.(*db.Neo4jError)
-	if isNeo4jErr {
-		return err
+	if version.Major < 5 || (version.Major == 5 && version.Minor == 0) {
+		serverName := connection.ServerName()
+		return &idb.FeatureNotSupportedError{
+			Server:  serverName,
+			Feature: "session auth",
+			Reason:  "requires least server v5.5",
+		}
 	}
-	return &ReadRoutingTableError{server: server, err: err}
+	return nil
 }

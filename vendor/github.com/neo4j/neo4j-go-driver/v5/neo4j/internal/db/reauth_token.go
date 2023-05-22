@@ -17,6 +17,12 @@
  * limitations under the License.
  */
 
-package neo4j
+package db
 
-const UserAgent = "Go Driver/5.8.1"
+import "github.com/neo4j/neo4j-go-driver/v5/neo4j/auth"
+
+type ReAuthToken struct {
+	Manager     auth.TokenManager
+	FromSession bool
+	ForceReAuth bool
+}
