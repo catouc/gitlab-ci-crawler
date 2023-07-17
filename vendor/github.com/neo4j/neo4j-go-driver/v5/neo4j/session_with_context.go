@@ -157,10 +157,12 @@ type SessionConfig struct {
 	// NotificationsMinSeverity defines the minimum severity level of notifications the server should send.
 	// By default, the driver's settings are used.
 	// Else, this option overrides the driver's settings.
+	// Disabling severities allows the server to skip analysis for those, which can speed up query execution.
 	NotificationsMinSeverity notifications.NotificationMinimumSeverityLevel
 	// NotificationsDisabledCategories defines the categories of notifications the server should not send.
 	// By default, the driver's settings are used.
 	// Else, this option overrides the driver's settings.
+	// Disabling categories allows the server to skip analysis for those, which can speed up query execution.
 	NotificationsDisabledCategories notifications.NotificationDisabledCategories
 	// Auth is used to overwrite the authentication information for the session.
 	// This requires the server to support re-authentication on the protocol level.
@@ -222,7 +224,7 @@ func newSessionWithContext(
 	now *func() time.Time,
 ) *sessionWithContext {
 	logId := log.NewId()
-	logger.Debugf(log.Session, logId, "Created with context")
+	logger.Debugf(log.Session, logId, "Created")
 
 	fetchSize := config.FetchSize
 	if sessConfig.FetchSize != FetchDefault {
@@ -308,7 +310,6 @@ func (s *sessionWithContext) BeginTransaction(ctx context.Context, configurers .
 		return nil, errorutil.WrapError(err)
 	}
 
-	// Begin transaction
 	beginBookmarks, err := s.getBookmarks(ctx)
 	if err != nil {
 		_ = s.pool.Return(ctx, conn)
@@ -337,10 +338,14 @@ func (s *sessionWithContext) BeginTransaction(ctx context.Context, configurers .
 		fetchSize: s.fetchSize,
 		txHandle:  txHandle,
 		onClosed: func(tx *explicitTransaction) {
-			// On transaction closed (rolled back or committed)
-			bookmarkErr := s.retrieveBookmarks(ctx, conn, beginBookmarks)
-			poolErr := s.pool.Return(ctx, conn)
+			if tx.conn == nil {
+				return
+			}
+			// On run failure, transaction closed (rolled back or committed)
+			bookmarkErr := s.retrieveBookmarks(ctx, tx.conn, beginBookmarks)
+			poolErr := s.pool.Return(ctx, tx.conn)
 			tx.err = errorutil.CombineAllErrors(tx.err, bookmarkErr, poolErr)
+			tx.conn = nil
 			s.explicitTx = nil
 		},
 	}
@@ -502,18 +507,17 @@ func (s *sessionWithContext) getServers(mode idb.AccessMode) func(context.Contex
 }
 
 func (s *sessionWithContext) getConnection(ctx context.Context, mode idb.AccessMode, livenessCheckThreshold time.Duration) (idb.Connection, error) {
-	if s.driverConfig.ConnectionAcquisitionTimeout > 0 {
+	timeout := s.driverConfig.ConnectionAcquisitionTimeout
+	if timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, s.driverConfig.ConnectionAcquisitionTimeout)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		if cancel != nil {
 			defer cancel()
 		}
-		s.log.Debugf(log.Session, s.logId, "connection acquisition timeout is: %s",
-			s.driverConfig.ConnectionAcquisitionTimeout.String())
-		if deadline, ok := ctx.Deadline(); ok {
-			s.log.Debugf(log.Session, s.logId, "connection acquisition resolved deadline is: %s",
-				deadline.String())
-		}
+		deadline, _ := ctx.Deadline()
+		s.log.Debugf(log.Session, s.logId, "connection acquisition timeout is %s, resolved deadline is: %s", timeout, deadline)
+	} else if deadline, ok := ctx.Deadline(); ok {
+		s.log.Debugf(log.Session, s.logId, "connection acquisition user-provided deadline is: %s", deadline)
 	}
 
 	if err := s.resolveHomeDatabase(ctx); err != nil {
@@ -527,7 +531,7 @@ func (s *sessionWithContext) getConnection(ctx context.Context, mode idb.AccessM
 	conn, err := s.pool.Borrow(
 		ctx,
 		s.getServers(mode),
-		s.driverConfig.ConnectionAcquisitionTimeout != 0,
+		timeout != 0,
 		s.config.BoltLogger,
 		livenessCheckThreshold,
 		s.auth)
