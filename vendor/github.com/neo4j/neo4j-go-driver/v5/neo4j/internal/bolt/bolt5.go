@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/auth"
 	iauth "github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/auth"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/boltagent"
 	idb "github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/errorutil"
 	"net"
@@ -243,6 +244,15 @@ func (b *bolt5) Connect(
 	}
 	if routingContext != nil {
 		hello["routing"] = routingContext
+	}
+	// On bolt >= 5.3 add bolt agent information to hello
+	if b.minor >= 3 {
+		info := boltagent.New()
+		hello["bolt_agent"] = map[string]string{
+			"product":  info.Product(),
+			"platform": info.Platform(),
+			"language": info.Language(),
+		}
 	}
 	if b.minor == 0 {
 		// Merge authentication keys into hello, avoid overwriting existing keys
@@ -1015,9 +1025,6 @@ func (b *bolt5) discardResponseHandler(stream *stream) responseHandler {
 			stream.err = failure
 			b.onFailure(ctx, failure) // Will detach the stream
 		},
-		onUnknown: func(msg any) {
-			b.setError(fmt.Errorf("unknown response %v", msg), true)
-		},
 	}
 }
 
@@ -1057,9 +1064,6 @@ func (b *bolt5) pullResponseHandler(stream *stream) responseHandler {
 			stream.err = failure
 			b.onFailure(ctx, failure) // Will detach the stream
 		},
-		onUnknown: func(msg any) {
-			b.setError(fmt.Errorf("unknown response %v", msg), true)
-		},
 	}
 }
 
@@ -1072,9 +1076,6 @@ func (b *bolt5) resetResponseHandler() responseHandler {
 			_ = b.onNeo4jError(ctx, b, failure)
 			b.state = bolt5Dead
 		},
-		onUnknown: func(any) {
-			b.state = bolt5Dead
-		},
 	}
 }
 
@@ -1082,7 +1083,6 @@ func (b *bolt5) expectedSuccessHandler(onSuccess func(*success)) responseHandler
 	return responseHandler{
 		onSuccess: onSuccess,
 		onFailure: b.onFailure,
-		onUnknown: b.onUnknown,
 		onIgnored: onIgnoredNoOp,
 	}
 }
@@ -1118,10 +1118,6 @@ func (b *bolt5) onFailure(ctx context.Context, failure *db.Neo4jError) {
 		err = errorutil.CombineErrors(callbackErr, failure)
 	}
 	b.setError(err, isFatalError(failure))
-}
-
-func (b *bolt5) onUnknown(msg any) {
-	b.setError(fmt.Errorf("expected success or database error, got %v", msg), true)
 }
 
 func (b *bolt5) initializeReadTimeoutHint(hints map[string]any) {
