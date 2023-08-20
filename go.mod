@@ -1,6 +1,6 @@
 module github.com/catouc/gitlab-ci-crawler
 
-go 1.19
+go 1.21
 
 require (
 	github.com/ardanlabs/conf/v3 v3.1.6
