@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+RELEASE_TYPE="$1"
+
+if [ $(git rev-parse --abbrev-ref HEAD) != "main" ]; then
+	while true; do
+	read -p "Not on default branch, want to switch to it (y/n)?" choice
+
+	case $choice in
+	[yY] )
+		git checkout --quiet main
+		break;;
+	[nN] )
+		exit 1;;
+	* ) echo "invalid response, use \"y\" or \"n\"";;
+	esac
+
+	done
+fi
+
+git tag $(semver $RELEASE_TYPE)
+git push origin main
+git push --tags origin main
