@@ -1,0 +1,15 @@
+string-trigger:
+  trigger: "test/trigger"
+
+project-trigger:
+  trigger:
+    project: "project/trigger"
+
+project-branch-trigger:
+  trigger:
+    project: "project/trigger"
+    branch: "branch"
+
+include-trigger:
+  trigger:
+    include: "some-child/pipeline.yml"
