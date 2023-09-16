@@ -1,5 +1,3 @@
-//go:build internal_testkit
-
 /*
  * Copyright (c) "Neo4j"
  * Neo4j Sweden AB [https://neo4j.com]
@@ -19,19 +17,12 @@
  * limitations under the License.
  */
 
-package auth
+//go:build internal_testkit
 
-import "time"
+package router
 
-func SetTimer(t TokenManager, timer func() time.Time) {
-	if t, ok := t.(*neo4jAuthTokenManager); ok {
-		t.now = &timer
-	}
-}
+import idb "github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
 
-func ResetTime(t TokenManager) {
-	if t, ok := t.(*neo4jAuthTokenManager); ok {
-		now := time.Now
-		t.now = &now
-	}
+func (r *Router) GetTable(database string) *idb.RoutingTable {
+	return r.getTable(database)
 }
