@@ -131,6 +131,7 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			return nil
 		}
 
+
 		err := c.handleIncludes(ctx, project, gitlabCIFileName)
 		if err != nil {
 			c.logger.Error().
@@ -151,12 +152,41 @@ func (c *Crawler) handleIncludes(ctx context.Context, project gitlab.Project, fi
 		return fmt.Errorf("failed to get file %s: %w", filePath, err)
 	}
 
+	triggers, err := c.parseTriggers(gitlabCIFile)
+	if err != nil {
+		return fmt.Errorf("failed to parse triggers: %w", err)
+	}
+
+	triggers = c.enrichTriggers(triggers, project.PathWithNamespace)
+
+	for _, trigger := range triggers {
+		c.logger.Debug().Dict("trigger", zerolog.Dict().
+			Str("Project", trigger.Project).
+			Str("SourceProject", project.PathWithNamespace),
+		).Msg("")
+		err := c.storage.CreateTriggerEdge(ctx, storage.Edge{
+			SourceProject: project.PathWithNamespace,
+			TargetProject: trigger.Project,
+			Ref: trigger.Branch,
+		})
+		if err != nil {
+			c.logger.Err(err).
+				Str("Project", project.PathWithNamespace).
+				Msg("failed to create trigger edge")
+		}
+	}
+
 	includes, err := c.parseIncludes(gitlabCIFile)
 	if err != nil {
 		return fmt.Errorf("failed to parse includes: %w", err)
 	}
 
-	includes = c.enrichIncludes(includes, project, c.config.DefaultRefName)
+	includes = c.enrichIncludes(
+		includes,
+		project.DefaultBranch,
+		project.PathWithNamespace,
+		c.config.DefaultRefName,
+	)
 
 	for _, i := range includes {
 		if i.Ref == "" {
@@ -197,7 +227,7 @@ func (c *Crawler) traverseIncludes(ctx context.Context, parentName string, inclu
 		return fmt.Errorf("failed to write project to neo4j: %w", err)
 	}
 
-	if err := c.storage.CreateIncludeEdge(ctx, storage.IncludeEdge{
+	if err := c.storage.CreateIncludeEdge(ctx, storage.Edge{
 		SourceProject: parentName,
 		TargetProject: include.Project,
 		Ref:           include.Ref,
@@ -214,3 +244,4 @@ func (c *Crawler) traverseIncludes(ctx context.Context, parentName string, inclu
 
 	return nil
 }
+

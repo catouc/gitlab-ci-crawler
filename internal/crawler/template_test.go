@@ -17,7 +17,11 @@ func (ns NilStorage) CreateProjectNode(ctx context.Context, projectPath string) 
 	return nil
 }
 
-func (ns NilStorage) CreateIncludeEdge(ctx context.Context, include storage.IncludeEdge) error {
+func (ns NilStorage) CreateIncludeEdge(ctx context.Context, include storage.Edge) error {
+	return nil
+}
+
+func (ns NilStorage) CreateTriggerEdge(ctx context.Context, include storage.Edge) error {
 	return nil
 }
 
