@@ -4,9 +4,9 @@ import "context"
 
 // TODO: maybe add metadata passing options
 
-// IncludeEdge holds all relevant information to create meaningful
+// Edge holds all relevant information to create meaningful
 // edges inside the storage system for querying.
-type IncludeEdge struct {
+type Edge struct {
 	SourceProject string
 	TargetProject string
 	Ref           string
@@ -18,11 +18,15 @@ type Storage interface {
 	// creating a node inside the storage.
 	CreateProjectNode(ctx context.Context, projectPath string) error
 
-	// CreateIncludeEdge is responsible for creating the edges
-	// inside the storage, include edges should have the
+	// CreateIncludeEdge is responsible for creating the include edges
+	// inside of the storage, include edges should have the
 	// `ref` and `files` fields set to allow for queries based
 	// on the data.
-	CreateIncludeEdge(ctx context.Context, include IncludeEdge) error
+	CreateIncludeEdge(ctx context.Context, include Edge) error
+
+	// CreateTriggerEdge is responsible for creating the edges for triggers
+	// inside of the storage
+	CreateTriggerEdge(ctx context.Context, include Edge) error
 
 	// RemoveAll will delete all nodes & edges
 	RemoveAll(ctx context.Context) error

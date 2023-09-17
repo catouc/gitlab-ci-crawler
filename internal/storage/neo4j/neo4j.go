@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/catouc/gitlab-ci-crawler/internal/storage"
-	neo4jDriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	neo4jDriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 type Storage struct {
@@ -75,13 +75,37 @@ func (s *Storage) CreateProjectNode(_ context.Context, projectPath string) error
 	return err
 }
 
-func (s *Storage) CreateIncludeEdge(_ context.Context, include storage.IncludeEdge) error {
+func (s *Storage) CreateIncludeEdge(_ context.Context, include storage.Edge) error {
 	cypher := "MATCH (p:Project {name: $sourceProject})\nMATCH (p2:Project {name: $targetProject})\nMERGE (p)-[rel:INCLUDES {ref: $ref, files:$files}]->(p2)"
 	parameters := map[string]interface{}{
 		"sourceProject": include.SourceProject,
 		"targetProject": include.TargetProject,
 		"ref":           include.Ref,
 		"files":         strings.Join(include.Files, ","),
+	}
+	_, err := s.Session.WriteTransaction(func(transaction neo4j.Transaction) (interface{}, error) {
+		result, err := transaction.Run(cypher, parameters)
+		if err != nil {
+			return nil, err
+		}
+
+		if result.Next() {
+			return nil, nil
+		}
+
+		return nil, result.Err()
+	}, func(config *neo4jDriver.TransactionConfig) {
+		config.Timeout = 15 * time.Second
+	})
+	return err
+}
+
+func (s *Storage) CreateTriggerEdge(_ context.Context, edge storage.Edge) error {
+	cypher := "MATCH (p:Project {name: $sourceProject})\nMATCH (p2:Project {name: $targetProject})\nMERGE (p)-[rel:TRIGGERS {ref: $ref}]->(p2)"
+	parameters := map[string]interface{}{
+		"sourceProject": edge.SourceProject,
+		"targetProject": edge.TargetProject,
+		"ref":           edge.Ref,
 	}
 	_, err := s.Session.WriteTransaction(func(transaction neo4j.Transaction) (interface{}, error) {
 		result, err := transaction.Run(cypher, parameters)

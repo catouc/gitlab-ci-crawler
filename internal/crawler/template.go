@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/catouc/gitlab-ci-crawler/internal/gitlab"
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
@@ -180,7 +179,7 @@ func (c *Crawler) parseIncludeMap(input map[string]interface{}) (RemoteInclude, 
 	}, nil
 }
 
-func (c *Crawler) enrichIncludes(rawIncludes []RemoteInclude, project gitlab.Project, defaultRefName string) []RemoteInclude {
+func (c *Crawler) enrichIncludes(rawIncludes []RemoteInclude, defaultBranch, projectPathWithNamespace, defaultRefName string) []RemoteInclude {
 	enrichedIncludes := make([]RemoteInclude, len(rawIncludes))
 
 	for i, include := range rawIncludes {
@@ -198,14 +197,14 @@ func (c *Crawler) enrichIncludes(rawIncludes []RemoteInclude, project gitlab.Pro
 				include.Ref = defaultRefName
 			}
 		case include.Local != "":
-			include.Project = project.PathWithNamespace
-			include.Ref = project.DefaultBranch
+			include.Project = projectPathWithNamespace
+			include.Ref = defaultBranch 
 			include.Files = []string{include.Local}
 		case include.Remote != "":
 			// TODO: implement
 		case include.Template != "":
-			include.Project = project.PathWithNamespace
-			include.Ref = project.DefaultBranch
+			include.Project = projectPathWithNamespace
+			include.Ref = defaultBranch
 			include.Files = []string{include.Template}
 		default:
 			c.logger.Warn().
@@ -296,4 +295,19 @@ func extractFieldFromMap(fieldName string, in map[string]interface{}) string {
 	}
 
 	return sField
+}
+
+func (c *Crawler) enrichTriggers(triggers []RawTrigger, projectPathWithNameSpace string) []RawTrigger {
+	enrichedTriggers := make([]RawTrigger, 0)
+	for _, t := range triggers {
+		if t.Branch == "" {
+			t.Branch = c.config.DefaultRefName
+		}
+
+		if t.Include != "" && t.Project == "" {
+			t.Project = projectPathWithNameSpace	
+		}
+		enrichedTriggers = append(enrichedTriggers, t)
+	}
+	return enrichedTriggers
 }
