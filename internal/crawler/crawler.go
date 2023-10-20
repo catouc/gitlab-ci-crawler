@@ -8,6 +8,7 @@ import (
 	"github.com/catouc/gitlab-ci-crawler/internal/storage"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"net/http"
 	"strings"
@@ -20,6 +21,7 @@ type Crawler struct {
 	gitlabClient *gitlab.Client
 	storage      storage.Storage
 	logger       zerolog.Logger
+	nWorkers     int
 }
 
 // New creates a new project crawler
@@ -45,6 +47,7 @@ func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, e
 		gitlabClient: gitlabClient,
 		storage:      store,
 		logger:       logger,
+		nWorkers:     cfg.numberOfWorkers,
 	}, nil
 }
 
@@ -75,18 +78,18 @@ func (c *Crawler) Crawl(ctx context.Context) error {
 		streamOK = true
 	}()
 
-	for p := range resultChan {
-		_, exists := c.projectSet[p.PathWithNamespace]
-		if exists {
-			continue
-		}
+	errs, ctx := errgroup.WithContext(ctx)
 
-		if err := c.updateProjectInGraph(ctx, p); err != nil {
-			c.logger.Err(err).
-				Str("ProjectPath", p.PathWithNamespace).
-				Int("ProjectID", p.ID).
-				Msg("failed to parse project")
-		}
+	for i := 0; i < c.nWorkers; i++ {
+		errs.Go(
+			func() error {
+				err := c.updateProjectInGraphWorker(ctx, resultChan)
+				return err
+			})
+	}
+	err := errs.Wait()
+	if err != nil {
+		return err
 	}
 
 	if !streamOK {
@@ -94,6 +97,19 @@ func (c *Crawler) Crawl(ctx context.Context) error {
 	}
 
 	c.logger.Info().Msg("stopped crawling")
+	return nil
+}
+
+func (c *Crawler) updateProjectInGraphWorker(ctx context.Context, projects chan gitlab.Project) error {
+	for p := range projects {
+		if err := c.updateProjectInGraph(ctx, p); err != nil {
+			c.logger.Err(err).
+				Str("ProjectPath", p.PathWithNamespace).
+				Int("ProjectID", p.ID).
+				Msg("failed to parse project")
+			return err
+		}
+	}
 	return nil
 }
 

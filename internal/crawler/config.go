@@ -44,6 +44,7 @@ type Config struct {
 	HTTPClientMaxRetry     int           `conf:"default:2,short,m,env:HTTP_CLIENT_MAX_RETRY"`
 	HTTPClientMaxRetryWait time.Duration `conf:"default:30s,short:w,env:HTTP_CLIENT_MAX_RETRY_WAIT"`
 	HTTPClientMinRetryWait time.Duration `conf:"default:5s,short:n,env:HTTP_CLIENT_MIN_RETRY_WAIT"`
+	numberOfWorkers        int           `conf:"default:20,short:wr,env:NUMBER_OF_WORKERS"`
 	// There should be global config composition maybe? For not this lives here
 	// though this is the global log level
 	LogLevel  int    `conf:"default:1,env:LOG_LEVEL"`
