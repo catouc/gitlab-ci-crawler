@@ -4,15 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
-	"sync"
-
 	"github.com/catouc/gitlab-ci-crawler/internal/gitlab"
 	"github.com/catouc/gitlab-ci-crawler/internal/storage"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
+	"net/http"
+	"strings"
 )
 
 const gitlabCIFileName = ".gitlab-ci.yml"
@@ -22,9 +20,6 @@ type Crawler struct {
 	gitlabClient *gitlab.Client
 	storage      storage.Storage
 	logger       zerolog.Logger
-
-	projectSetMut sync.RWMutex
-	projectSet    map[string]struct{}
 }
 
 // New creates a new project crawler
@@ -50,7 +45,6 @@ func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, e
 		gitlabClient: gitlabClient,
 		storage:      store,
 		logger:       logger,
-		projectSet:   make(map[string]struct{}),
 	}, nil
 }
 
@@ -108,17 +102,6 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		c.projectSetMut.RLock()
-		_, exists := c.projectSet[project.PathWithNamespace]
-		if exists {
-			c.projectSetMut.RUnlock()
-			return nil
-		}
-		c.projectSetMut.RUnlock()
-		c.projectSetMut.Lock()
-		c.projectSet[project.PathWithNamespace] = struct{}{}
-		c.projectSetMut.Unlock()
-
 		if err := c.storage.CreateProjectNode(ctx, project.PathWithNamespace); err != nil {
 			return fmt.Errorf("failed to write project to neo4j: %w", err)
 		}
@@ -219,9 +202,6 @@ func (c *Crawler) handleIncludes(ctx context.Context, project gitlab.Project, fi
 }
 
 func (c *Crawler) traverseIncludes(ctx context.Context, parentName string, include RemoteInclude) error {
-	c.projectSetMut.Lock()
-	c.projectSet[include.Project] = struct{}{}
-	c.projectSetMut.Unlock()
 
 	if err := c.storage.CreateProjectNode(ctx, include.Project); err != nil {
 		return fmt.Errorf("failed to write project to neo4j: %w", err)
