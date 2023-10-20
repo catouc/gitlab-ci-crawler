@@ -236,12 +236,5 @@ func (c *Crawler) traverseIncludes(ctx context.Context, parentName string, inclu
 		return fmt.Errorf("failed to write neo4j transaction: %w", err)
 	}
 
-	for _, ci := range include.Children {
-		if err := c.traverseIncludes(ctx, ci.Project, ci); err != nil {
-			return fmt.Errorf("failed to write child includes for %s: %w", ci.Project, err)
-		}
-	}
-
 	return nil
 }
-

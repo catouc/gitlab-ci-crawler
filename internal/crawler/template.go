@@ -16,7 +16,6 @@ type RemoteInclude struct {
 	Local    string      `yaml:"local"`
 	Remote   string      `yaml:"remote"`
 	Template string      `yaml:"template"`
-	Children []RemoteInclude
 }
 
 type StringArray []string
