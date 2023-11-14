@@ -1,14 +1,13 @@
 {
   inputs = {
-    systems.url = "github:nix-systems/x86_64-linux";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils/v1.0.0";
   };
 
   description = "gitlab-ci-crawler, building a dependency graph for CI includes";
 
-  outputs = { self, nixpkgs, systems, flake-utils }:
-  flake-utils.lib.eachDefaultSystem (system:
+  outputs = { self, nixpkgs, flake-utils }:
+  flake-utils.lib.eachSystem [ "x86_64-linux" "i686-linux" ] (system:
     let
       pkgs = nixpkgs.legacyPackages.${system};
       build = pkgs.buildGoModule {
