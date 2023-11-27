@@ -9,7 +9,7 @@ require (
 	github.com/neo4j/neo4j-go-driver/v5 v5.14.0
 	github.com/rs/zerolog v1.31.0
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/time v0.3.0
+	golang.org/x/time v0.5.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
