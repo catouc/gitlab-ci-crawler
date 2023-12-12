@@ -2,8 +2,6 @@
  * Copyright (c) "Neo4j"
  * Neo4j Sweden AB [https://neo4j.com]
  *
- * This file is part of Neo4j.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -57,9 +55,12 @@ type ResultWithContext interface {
 	IsOpen() bool
 	buffer(ctx context.Context)
 	legacy() Result
+	errorHandler(err error)
 }
 
 const consumedResultError = "result cursor is not available anymore"
+
+const resultFailedError = "result failed due to invalid transaction"
 
 type resultWithContext struct {
 	conn                 idb.Connection
@@ -72,15 +73,24 @@ type resultWithContext struct {
 	peekedRecord         *Record
 	peekedSummary        *db.Summary
 	peeked               bool
+	txState              *transactionState
 	afterConsumptionHook func()
 }
 
-func newResultWithContext(connection idb.Connection, stream idb.StreamHandle, cypher string, params map[string]any, afterConsumptionHook func()) ResultWithContext {
+func newResultWithContext(
+	connection idb.Connection,
+	stream idb.StreamHandle,
+	cypher string,
+	params map[string]any,
+	txState *transactionState,
+	afterConsumptionHook func(),
+) ResultWithContext {
 	return &resultWithContext{
 		conn:                 connection,
 		streamHandle:         stream,
 		cypher:               cypher,
 		params:               params,
+		txState:              txState,
 		afterConsumptionHook: afterConsumptionHook,
 	}
 }
@@ -234,6 +244,9 @@ func (r *resultWithContext) advance(ctx context.Context) {
 		r.peeked = false
 	} else {
 		r.record, r.summary, r.err = r.conn.Next(ctx, r.streamHandle)
+		if r.err != nil {
+			r.txState.onError(r.err)
+		}
 	}
 }
 
@@ -261,4 +274,10 @@ func (r *resultWithContext) callAfterConsumptionHook() {
 	}
 	r.afterConsumptionHook()
 	r.afterConsumptionHook = nil
+}
+
+func (r *resultWithContext) errorHandler(error) {
+	if r.err == nil {
+		r.err = &UsageError{Message: resultFailedError}
+	}
 }
