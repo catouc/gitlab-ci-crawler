@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/ardanlabs/conf/v3 v3.1.7
 	github.com/cenkalti/backoff/v4 v4.2.1
-	github.com/hashicorp/go-retryablehttp v0.7.4
+	github.com/hashicorp/go-retryablehttp v0.7.5
 	github.com/neo4j/neo4j-go-driver/v5 v5.14.0
 	github.com/rs/zerolog v1.31.0
 	github.com/stretchr/testify v1.8.4
