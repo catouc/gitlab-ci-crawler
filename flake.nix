@@ -12,7 +12,7 @@
       pkgs = nixpkgs.legacyPackages.${system};
       build = pkgs.buildGoModule {
         pname = "gitalb-ci-crawler";
-        version = "v0.13.15";
+        version = "v0.14.0";
         modSha256 = pkgs.lib.fakeSha256;
         vendorSha256 = null;
         src = ./.;
