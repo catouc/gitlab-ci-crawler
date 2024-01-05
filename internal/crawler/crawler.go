@@ -142,14 +142,14 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 }
 
 func (c *Crawler) handleIncludes(ctx context.Context, project gitlab.Project, filePath string, cycleDetectionMap map[string]bool) error {
-	if cycleDetectionMap[project.PathWithNamespace] {
+	if cycleDetectionMap[project.PathWithNamespace + "--" + filePath] {
 		projectsVisited := make([]string, 0, len(cycleDetectionMap))
 		for k := range cycleDetectionMap {
 			projectsVisited = append(projectsVisited, k)
 		}
 		return errors.New("cycle detected, this should not be possible, the projects visited are: " + strings.Join(projectsVisited[:], ","))
 	}
-	cycleDetectionMap[project.PathWithNamespace] = true
+	cycleDetectionMap[project.PathWithNamespace + "--" + filePath] = true
 
 	gitlabCIFile, err := c.gitlabClient.GetRawFileFromProject(ctx, project.ID, filePath, project.DefaultBranch)
 	if err != nil {
