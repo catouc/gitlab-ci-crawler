@@ -47,7 +47,7 @@ func New(cfg *Config, logger zerolog.Logger, store storage.Storage) (*Crawler, e
 		gitlabClient: gitlabClient,
 		storage:      store,
 		logger:       logger,
-		nWorkers:     cfg.numberOfWorkers,
+		nWorkers:     cfg.NumberOfWorkers,
 	}, nil
 }
 
