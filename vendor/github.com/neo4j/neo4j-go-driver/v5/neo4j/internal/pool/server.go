@@ -20,10 +20,12 @@ package pool
 import (
 	"container/list"
 	"context"
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j/log"
 	"sync/atomic"
 	"time"
+
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/db"
+	itime "github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/time"
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/log"
 )
 
 // Represents a server with a number of connections that either is in use (borrowed) or
@@ -66,22 +68,22 @@ func (s *server) getIdle() db.Connection {
 func (s *server) healthCheck(
 	ctx context.Context,
 	connection db.Connection,
-	idlenessThreshold time.Duration,
+	idlenessTimeout time.Duration,
 	auth *db.ReAuthToken,
 	boltLogger log.BoltLogger) (healthy bool, _ error) {
 
 	connection.SetBoltLogger(boltLogger)
-	if time.Since(connection.IdleDate()) > idlenessThreshold {
+	if itime.Since(connection.IdleDate()) > idlenessTimeout {
 		connection.ForceReset(ctx)
 		if !connection.IsAlive() {
-			return false, nil
+			return false, ctx.Err()
 		}
 	}
 	if err := connection.ReAuth(ctx, auth); err != nil {
 		return false, err
 	}
 	if !connection.IsAlive() {
-		return false, nil
+		return false, ctx.Err()
 	}
 	// Update round-robin counter every time we give away a connection and keep track
 	// of our own round-robin index
