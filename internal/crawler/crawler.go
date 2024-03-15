@@ -130,7 +130,7 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 			return nil
 		}
 
-		err := c.handleIncludes(ctx, project, gitlabCIFileName, make(map[string]bool))
+		err := c.handleIncludes(ctx, project, gitlabCIFileName, make(map[string]struct{}))
 		if err != nil {
 			c.logger.Error().
 				Err(err).
@@ -141,15 +141,15 @@ func (c *Crawler) updateProjectInGraph(ctx context.Context, project gitlab.Proje
 	}
 }
 
-func (c *Crawler) handleIncludes(ctx context.Context, project gitlab.Project, filePath string, cycleDetectionMap map[string]bool) error {
-	if cycleDetectionMap[project.PathWithNamespace + "--" + filePath] {
+func (c *Crawler) handleIncludes(ctx context.Context, project gitlab.Project, filePath string, cycleDetectionMap map[string]struct{}) error {
+	if _, found := cycleDetectionMap[project.PathWithNamespace + "--" + filePath]; found {
 		projectsVisited := make([]string, 0, len(cycleDetectionMap))
 		for k := range cycleDetectionMap {
 			projectsVisited = append(projectsVisited, k)
 		}
 		return errors.New("cycle detected, this should not be possible, the projects visited are: " + strings.Join(projectsVisited[:], ","))
 	}
-	cycleDetectionMap[project.PathWithNamespace + "--" + filePath] = true
+	cycleDetectionMap[project.PathWithNamespace + "--" + filePath] = struct{}{}
 
 	gitlabCIFile, err := c.gitlabClient.GetRawFileFromProject(ctx, project.ID, filePath, project.DefaultBranch)
 	if err != nil {
