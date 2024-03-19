@@ -270,10 +270,20 @@ func (c *Crawler) parseTriggers(file []byte) ([]RawTrigger, error) {
 
 func (c *Crawler) parseTriggerMap(input map[string]interface{}) (RawTrigger, error) {
 	t := RawTrigger{
-		Include: extractFieldFromMap("include", input),
 		Project: extractFieldFromMap("project", input),
 		Branch:  extractFieldFromMap("branch", input),
 	}
+
+	// TODO: type switch on input to include dymamic child pipelines
+	// https://docs.gitlab.com/ee/ci/pipelines/downstream_pipelines.html#dynamic-child-pipelines
+	// This will require the entire parser to be reworked again because the RawTrigger
+	// Inlcude field cannot hold multiple values.
+	//
+	// Example configuration:
+	// trigger:
+	//   include:
+	//     - artifact: some yaml
+	//       job: some job name
 
 	if t.Include == "" && t.Project == "" && t.Branch == "" {
 		return RawTrigger{}, errors.New("trigger map is not parseable")

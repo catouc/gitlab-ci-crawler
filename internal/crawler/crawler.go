@@ -159,7 +159,7 @@ func (c *Crawler) handleIncludes(ctx context.Context, project gitlab.Project, fi
 		return fmt.Errorf("failed to get file %s: %w", filePath, err)
 	}
 
-	triggers, err := c.parseTriggers(gitlabCIFile)
+	triggers, err := c.parseTriggers(project.PathWithNamespace, gitlabCIFile)
 	if err != nil {
 		return fmt.Errorf("failed to parse triggers: %w", err)
 	}
