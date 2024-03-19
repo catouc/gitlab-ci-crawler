@@ -1,0 +1,6 @@
+include:
+  - 'ci/examples/ci.yml'
+  - project: 'my-group/project'
+    file: 'tmp.yml'
+  # - 'parse this!'
+

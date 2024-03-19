@@ -13,3 +13,7 @@ project-branch-trigger:
 include-trigger:
   trigger:
     include: "some-child/pipeline.yml"
+
+#include-trigger:
+#  trigger:
+#    include: "some-child/pipeline.yml"

@@ -54,3 +54,27 @@ func TestCrawlerParseTriggers(t *testing.T) {
 
 	assert.ElementsMatch(t, expectedTriggers, triggers)
 }
+
+func TestCrawlerParseIncludes(t *testing.T) {
+	testFile, err := os.ReadFile("../../test-files/gitlab-ci-includes.yaml")
+	if err != nil {
+		t.Fatal("cannot find test file")
+	}
+
+	crawler, err := New(&Config{}, zerolog.Logger{}, NilStorage{})
+	if err != nil {
+		t.Fatalf("failed to initialse crawler: %s", err)
+	}
+
+	triggers, err := crawler.parseIncludes(testFile)
+	if err != nil {
+		t.Fatalf("failed to parse triggers: %s", err)
+	}
+
+	expectedIncludes := []RemoteInclude{
+		{Local: "ci/examples/ci.yml"},
+		{Project: "my-group/project", Files: StringArray{"tmp.yml"}},
+	}
+
+	assert.ElementsMatch(t, expectedIncludes, triggers)
+}
