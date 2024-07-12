@@ -1,7 +1,10 @@
+version: 2
+
 builds:
   - main: ./cmd/gitlab-ci-crawler
     env:
       - CGO_ENABLED=0
+
 dockers:
   - dockerfile: Dockerfile_release
     image_templates:
