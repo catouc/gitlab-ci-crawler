@@ -121,14 +121,16 @@ type SessionConfig struct {
 	//		For older Bolt protocol versions, the behavior is the same as described for the bolt schemes above.
 	DatabaseName string
 	// FetchSize defines how many records to pull from server in each batch.
-	// From Bolt protocol v4 (Neo4j 4+) records can be fetched in batches as compared to fetching
-	// all in previous versions.
+	// From Bolt protocol v4 (Neo4j 4+) records can be fetched in batches as
+	// compared to fetching all in previous versions.
+	// If the underlying protocol does not support FetchSize, it is ignored.
 	//
-	// If FetchSize is set to FetchDefault, the driver decides the appropriate size. If set to a positive value
-	// that size is used if the underlying protocol supports it otherwise it is ignored.
+	// If FetchSize is set to `FetchDefault`, the driver decides the appropriate size.
+	// If set to a positive value that size is used; negative values behaves as `FetchAll` (see below).
 	//
-	// To turn off fetching in batches and always fetch everything, set FetchSize to FetchAll.
-	// If a single large result is to be retrieved this is the most performant setting.
+	// To turn off fetching in batches and always fetch everything, set FetchSize to `FetchAll`.
+	// A limited FetchSize ensures the client is not overflown with records,
+	// and allows to bound memory usage.
 	FetchSize int
 	// Logging target the session will send its Bolt message traces
 	//
@@ -163,6 +165,12 @@ type SessionConfig struct {
 	// Else, this option overrides the driver's settings.
 	// Disabling categories allows the server to skip analysis for those, which can speed up query execution.
 	NotificationsDisabledCategories notifications.NotificationDisabledCategories
+	// NotificationsDisabledClassifications is identical to NotificationsDisabledCategories.
+	// This alternative is provided for a consistent naming with neo4j.GqlStatusObject Classification.
+	//
+	// NotificationsDisabledClassifications is part of the GQL compliant notifications preview feature
+	// (see README on what it means in terms of support and compatibility guarantees)
+	NotificationsDisabledClassifications notifications.NotificationDisabledClassifications
 	// Auth is used to overwrite the authentication information for the session.
 	// This requires the server to support re-authentication on the protocol level.
 	// `nil` will make the driver use the authentication information from the driver configuration.
@@ -329,6 +337,7 @@ func (s *sessionWithContext) BeginTransaction(ctx context.Context, configurers .
 			NotificationConfig: idb.NotificationConfig{
 				MinSev:  s.config.NotificationsMinSeverity,
 				DisCats: s.config.NotificationsDisabledCategories,
+				DisClas: s.config.NotificationsDisabledClassifications,
 			},
 		}, true)
 	if err != nil {
@@ -482,6 +491,7 @@ func (s *sessionWithContext) executeTransactionFunction(
 			NotificationConfig: idb.NotificationConfig{
 				MinSev:  s.config.NotificationsMinSeverity,
 				DisCats: s.config.NotificationsDisabledCategories,
+				DisClas: s.config.NotificationsDisabledClassifications,
 			},
 		},
 		blockingTxBegin)
@@ -648,6 +658,7 @@ func (s *sessionWithContext) Run(ctx context.Context,
 			NotificationConfig: idb.NotificationConfig{
 				MinSev:  s.config.NotificationsMinSeverity,
 				DisCats: s.config.NotificationsDisabledCategories,
+				DisClas: s.config.NotificationsDisabledClassifications,
 			},
 		},
 	)
