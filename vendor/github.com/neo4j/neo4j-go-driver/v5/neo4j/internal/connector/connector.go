@@ -71,6 +71,7 @@ func (c Connector) Connect(
 	notificationConfig := db.NotificationConfig{
 		MinSev:  c.Config.NotificationsMinSeverity,
 		DisCats: c.Config.NotificationsDisabledCategories,
+		DisClas: c.Config.NotificationsDisabledClassifications,
 	}
 
 	// TLS not requested
@@ -86,6 +87,7 @@ func (c Connector) Connect(
 			c.Log,
 			boltLogger,
 			notificationConfig,
+			c.Config.ReadBufferSize,
 		)
 		if err != nil {
 			return nil, err
@@ -122,6 +124,7 @@ func (c Connector) Connect(
 		c.Log,
 		boltLogger,
 		notificationConfig,
+		c.Config.ReadBufferSize,
 	)
 	if err != nil {
 		return nil, err
