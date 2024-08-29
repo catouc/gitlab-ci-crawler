@@ -21,7 +21,7 @@ github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
-# github.com/neo4j/neo4j-go-driver/v5 v5.23.0
+# github.com/neo4j/neo4j-go-driver/v5 v5.24.0
 ## explicit; go 1.18
 github.com/neo4j/neo4j-go-driver/v5/neo4j
 github.com/neo4j/neo4j-go-driver/v5/neo4j/auth
