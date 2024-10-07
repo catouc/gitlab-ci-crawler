@@ -1,5 +1,5 @@
-github.com/ardanlabs/conf/v3 v3.1.8 h1:r0KUV9/Hni5XdeWR2+A1BiedIDnry5CjezoqgJ0rnFQ=
-github.com/ardanlabs/conf/v3 v3.1.8/go.mod h1:OIi6NK95fj8jKFPdZ/UmcPlY37JBg99hdP9o5XmNK9c=
+github.com/ardanlabs/conf/v3 v3.2.0 h1:Xi7OwSBupZLUYIFBGBRl6pHUXiw/hp+xP90h+UZby0c=
+github.com/ardanlabs/conf/v3 v3.2.0/go.mod h1:OIi6NK95fj8jKFPdZ/UmcPlY37JBg99hdP9o5XmNK9c=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
