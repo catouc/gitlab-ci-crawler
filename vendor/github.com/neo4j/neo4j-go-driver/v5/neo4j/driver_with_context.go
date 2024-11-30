@@ -472,29 +472,29 @@ func (d *driverWithContext) VerifyAuthentication(ctx context.Context, auth *Auth
 // the built-in callback neo4j.ExecuteQueryWithBookmarkManager.
 // You can disable bookmark management by passing the neo4j.ExecuteQueryWithoutBookmarkManager callback to ExecuteQuery.
 //
-// The equivalent functionality of ExecuteQuery can be replicated with pre-existing APIs as follows:
+// The equivalent functionality of ExecuteQuery can be replicated with sessions and transaction functions as follows:
 //
-//	 // all the error handling bits have been omitted for brevity (do not do this in production!)
-//		session := driver.NewSession(ctx, neo4j.SessionConfig{
-//			DatabaseName:     "<DATABASE>",
-//			ImpersonatedUser: "<USER>",
-//			BookmarkManager:  bookmarkManager,
-//		})
-//		defer handleClose(ctx, session)
-//		// session.ExecuteRead is called if the routing is set to neo4j.Read
-//		result, _ := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
-//			result, _ := tx.Run(ctx, "<CYPHER>", parameters)
-//			records, _ := result.Collect(ctx) // real implementation does not use Collect
-//			keys, _ := result.Keys()
-//			summary, _ := result.Consume(ctx)
-//			return &neo4j.EagerResult{
-//				Keys:    keys,
-//				Records: records,
-//				Summary: summary,
-//			}, nil
-//		})
-//		eagerResult := result.(*neo4j.EagerResult)
-//		// do something with eagerResult
+//	// all the error handling bits have been omitted for brevity (do not do this in production!)
+//	session := driver.NewSession(ctx, neo4j.SessionConfig{
+//		DatabaseName:     "<DATABASE>",
+//		ImpersonatedUser: "<USER>",
+//		BookmarkManager:  bookmarkManager,
+//	})
+//	defer handleClose(ctx, session)
+//	// session.ExecuteRead is called if the routing is set to neo4j.Read
+//	result, _ := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+//		result, _ := tx.Run(ctx, "<CYPHER>", parameters)
+//		records, _ := result.Collect(ctx) // real implementation does not use Collect
+//		keys, _ := result.Keys()
+//		summary, _ := result.Consume(ctx)
+//		return &neo4j.EagerResult{
+//			Keys:    keys,
+//			Records: records,
+//			Summary: summary,
+//		}, nil
+//	})
+//	eagerResult := result.(*neo4j.EagerResult)
+//	// do something with eagerResult
 //
 // The available ResultTransformer implementation, EagerResultTransformer, computes an *EagerResult.
 // As the latter's name suggests, this is not optimal when the result is made from a large number of records.
@@ -671,7 +671,6 @@ func ExecuteQueryWithTransactionConfig(configurers ...func(*TransactionConfig)) 
 		configuration.TransactionConfigurers = configurers
 	}
 }
-
 
 // ExecuteQueryWithAuthToken configures neo4j.ExecuteQuery to overwrite the AuthToken for the session.
 func ExecuteQueryWithAuthToken(auth AuthToken) ExecuteQueryConfigurationOption {
