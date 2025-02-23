@@ -14,7 +14,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 )
 
 const (
@@ -229,24 +229,30 @@ var ErrForbidden = errors.New("gitlan client is missing credentials to run, you 
 func (c *Client) checkGitLabauth(ctx context.Context) error {
 	requestUrl := c.Host + "/" + gitLabAPIPath + "/version"
 
-	call := func() error {
+	// We return an empty struct here because the v5 library of
+	// the backoff algorithm we use removed the normal func that
+	// only returned an error in favour of needing a return value
+	// at all times. An empty struct is of size 0, therefore we
+	// at least don't allocate anything here, it's just ugly.
+	call := func() (struct{}, error) {
 		resp, err := c.callGitLabAPI(ctx, requestUrl)
 		if err != nil {
-			return fmt.Errorf("failed to call %s: %w", requestUrl, err)
+			return struct{}{}, fmt.Errorf("failed to call %s: %w", requestUrl, err)
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized {
-			return backoff.Permanent(ErrUnauthorised)
+			return struct{}{}, backoff.Permanent(ErrUnauthorised)
 		}
 
 		if resp.StatusCode == http.StatusForbidden {
-			return backoff.Permanent(ErrForbidden)
+			return struct{}{}, backoff.Permanent(ErrForbidden)
 		}
 
 		if resp.StatusCode > 499 {
-			return fmt.Errorf("http error while calling %s: %s", requestUrl, resp.Status)
+			return struct{}{}, fmt.Errorf("http error while calling %s: %s", requestUrl, resp.Status)
 		}
-		return nil
+
+		return struct{}{}, nil
 	}
 
 	eb := &backoff.ExponentialBackOff{
@@ -254,11 +260,14 @@ func (c *Client) checkGitLabauth(ctx context.Context) error {
 		RandomizationFactor: 0.5,
 		Multiplier:          1.5,
 		MaxInterval:         5 * time.Second,
-		MaxElapsedTime:      30 * time.Second,
-		Stop:                backoff.Stop,
-		Clock:               backoff.SystemClock,
 	}
-	if err := backoff.Retry(call, eb); err != nil {
+	_, err := backoff.Retry(
+			ctx,
+			call,
+			backoff.WithBackOff(eb),
+			backoff.WithMaxElapsedTime(30*time.Second),
+		)
+	if err != nil {
 		if errors.Is(err, ErrUnauthorised) {
 			return err
 		}
