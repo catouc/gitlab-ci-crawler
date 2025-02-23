@@ -36,12 +36,12 @@
 
       devShells = {
         default = pkgs.mkShell {
-          buildInputs = [
-            pkgs.delve
-            pkgs.docker
-            pkgs.go_1_21
-            pkgs.gopls
-            pkgs.gotools
+          buildInputs = with pkgs; [
+            delve
+            docker
+            go_1_24
+            gopls
+            gotools
           ];
           shellHook = ''
             export NEO4J_USERNAME='neo4j'
