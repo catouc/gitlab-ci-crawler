@@ -174,6 +174,10 @@ func (b *bolt4) ServerName() string {
 	return b.serverName
 }
 
+func (b *bolt4) ConnId() string {
+	return b.connId
+}
+
 func (b *bolt4) ServerVersion() string {
 	return b.serverVersion
 }
@@ -236,11 +240,8 @@ func (b *bolt4) Connect(
 	hello := map[string]any{
 		"user_agent": userAgent,
 	}
-	// On bolt >= 4.1 add routing to enable/disable routing
-	if b.minor >= 1 {
-		if routingContext != nil {
-			hello["routing"] = routingContext
-		}
+	if routingContext != nil {
+		hello["routing"] = routingContext
 	}
 	checkUtcPatch := b.minor >= 3
 	if checkUtcPatch {
@@ -986,6 +987,14 @@ func (b *bolt4) GetCurrentAuth() (auth.TokenManager, iauth.Token) {
 
 func (b *bolt4) Telemetry(telemetry.API, func()) {
 	// TELEMETRY not support by this protocol version, so we ignore it.
+}
+
+func (b *bolt4) SetPinHomeDatabaseCallback(func(context.Context, string)) {
+	// Home database not supported by this protocol version, so we ignore it.
+}
+
+func (b *bolt4) IsSsrEnabled() bool {
+	return false
 }
 
 func (b *bolt4) helloResponseHandler(checkUtcPatch bool) responseHandler {
