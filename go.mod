@@ -8,7 +8,7 @@ require (
 	github.com/ardanlabs/conf/v3 v3.4.0
 	github.com/cenkalti/backoff/v5 v5.0.2
 	github.com/hashicorp/go-retryablehttp v0.7.7
-	github.com/neo4j/neo4j-go-driver/v5 v5.27.0
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.0
 	github.com/rs/zerolog v1.33.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.12.0

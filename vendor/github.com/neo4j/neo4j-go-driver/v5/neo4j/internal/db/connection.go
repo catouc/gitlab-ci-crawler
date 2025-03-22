@@ -124,6 +124,8 @@ type Connection interface {
 	Bookmark() string
 	// ServerName returns the name of the remote server
 	ServerName() string
+	// ConnId returns the connection id as assigned by the server ("" if not available)
+	ConnId() string
 	// ServerVersion returns the server version on pattern Neo4j/1.2.3
 	ServerVersion() string
 	// IsAlive returns true if the connection is fully functional.
@@ -170,6 +172,11 @@ type Connection interface {
 	GetCurrentAuth() (auth.TokenManager, iauth.Token)
 	// Telemetry sends telemetry information about the API usage to the server.
 	Telemetry(api telemetry.API, onSuccess func())
+	// SetPinHomeDatabaseCallback registers a callback to update the session's cached home database.
+	// The callback is triggered on successful BEGIN or RUN responses containing a database name.
+	SetPinHomeDatabaseCallback(callback func(ctx context.Context, database string))
+	// IsSsrEnabled returns true if the connection supports Server-Side Routing.
+	IsSsrEnabled() bool
 }
 
 type RoutingTable struct {
