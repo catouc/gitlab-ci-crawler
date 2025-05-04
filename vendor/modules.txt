@@ -1,5 +1,5 @@
-# github.com/ardanlabs/conf/v3 v3.4.0
-## explicit; go 1.18
+# github.com/ardanlabs/conf/v3 v3.7.2
+## explicit; go 1.23.0
 github.com/ardanlabs/conf/v3
 # github.com/cenkalti/backoff/v5 v5.0.2
 ## explicit; go 1.23

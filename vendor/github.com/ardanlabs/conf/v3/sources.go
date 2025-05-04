@@ -71,7 +71,7 @@ func envUsage(namespace string, fld Field) string {
 	if namespace == "" {
 		uspace = uspace[1:]
 	}
-	return "$" + uspace
+	return uspace
 }
 
 // =============================================================================
@@ -200,13 +200,20 @@ func (f *flag) Source(fld Field) (string, bool) {
 
 // flagUsage constructs a usage string for the flag argument.
 func flagUsage(fld Field) string {
-	usage := "--" + strings.ToLower(strings.Join(fld.FlagKey, `-`))
+	usage := "    "
+
 	if fld.Options.ShortFlagChar != 0 {
-		flagKey := []string{string(fld.Options.ShortFlagChar)}
-		usage += "/-" + strings.ToLower(strings.Join(flagKey, `-`))
+		usage = "-" + strings.ToLower(string(fld.Options.ShortFlagChar)) + ", "
 	}
 
+	usage += "--" + strings.ToLower(strings.Join(fld.FlagKey, `-`))
+
 	return usage
+}
+
+// longOptInfo constructs a long option description string.
+func longOptInfo(fld Field) string {
+	return "    --" + strings.ToLower(strings.Join(fld.FlagKey, `-`))
 }
 
 /*
