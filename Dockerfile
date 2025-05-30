@@ -4,7 +4,7 @@ WORKDIR /opt/app
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s" -o /opt/app -v ./cmd/gitlab-ci-crawler/
 
-FROM alpine:3.21
+FROM alpine:3.22
 WORKDIR /opt/app
 COPY --from=builder /opt/app/gitlab-ci-crawler .
 USER 65534
