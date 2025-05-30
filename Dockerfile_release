@@ -1,4 +1,4 @@
-FROM alpine:3.21
+FROM alpine:3.22
 WORKDIR /opt/app
 COPY gitlab-ci-crawler /opt/app/gitlab-ci-crawler
 USER 65534
