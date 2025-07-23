@@ -1,7 +1,7 @@
 # github.com/ardanlabs/conf/v3 v3.8.0
 ## explicit; go 1.23.0
 github.com/ardanlabs/conf/v3
-# github.com/cenkalti/backoff/v5 v5.0.2
+# github.com/cenkalti/backoff/v5 v5.0.3
 ## explicit; go 1.23
 github.com/cenkalti/backoff/v5
 # github.com/davecgh/go-spew v1.1.1
