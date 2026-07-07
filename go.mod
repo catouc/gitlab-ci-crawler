@@ -9,6 +9,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
+	github.com/neo4j/neo4j-go-driver/v6 v6.2.0
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.17.0

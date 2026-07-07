@@ -48,6 +48,8 @@ github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/telemetry
 github.com/neo4j/neo4j-go-driver/v5/neo4j/internal/time
 github.com/neo4j/neo4j-go-driver/v5/neo4j/log
 github.com/neo4j/neo4j-go-driver/v5/neo4j/notifications
+# github.com/neo4j/neo4j-go-driver/v6 v6.2.0
+## explicit; go 1.24
 # github.com/pmezard/go-difflib v1.0.0
 ## explicit
 github.com/pmezard/go-difflib/difflib
